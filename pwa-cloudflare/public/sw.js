@@ -1,4 +1,4 @@
-const CACHE_NAME = 'casa-en-orden-shell-v3';
+const CACHE_NAME = 'casa-en-orden-shell-v4';
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -70,7 +70,18 @@ self.addEventListener('push', event => {
       { action: 'dismiss', title: 'Cerrar' }
     ]
   };
-  event.waitUntil(self.registration.showNotification(title, options));
+  const refreshOpenWindows = self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
+    clientList.forEach(client => client.postMessage({
+      type: 'casa-en-orden:data-changed',
+      itemId: data.itemId || '',
+      actor: data.actor || '',
+      timestamp: Number(data.timestamp) || Date.now()
+    }));
+  });
+  event.waitUntil(Promise.all([
+    self.registration.showNotification(title, options),
+    refreshOpenWindows
+  ]));
 });
 
 self.addEventListener('notificationclick', event => {
@@ -80,7 +91,7 @@ self.addEventListener('notificationclick', event => {
   event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
     const existing = clients.find(client => new URL(client.url).origin === self.location.origin);
     if (existing) {
-      if ('navigate' in existing) existing.navigate(targetUrl);
+      if ('navigate' in existing) return existing.navigate(targetUrl).then(client => client ? client.focus() : existing.focus());
       return existing.focus();
     }
     return self.clients.openWindow(targetUrl);

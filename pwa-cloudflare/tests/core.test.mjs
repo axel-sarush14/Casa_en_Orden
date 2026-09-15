@@ -5,6 +5,7 @@ import {
   cleanNotification,
   hashSecret,
   normalizeActor,
+  normalizeOwnerRole,
   normalizePin,
   normalizeSubscription,
   notificationTopic,
@@ -28,6 +29,8 @@ test('normaliza actores y valida el PIN', () => {
   assert.equal(normalizeActor('  Laura   Gómez '), 'Laura Gómez');
   assert.equal(normalizePin(' 123456 '), '123456');
   assert.throws(() => normalizePin('123'), /PIN/);
+  assert.equal(normalizeOwnerRole('person2'), 'person2');
+  assert.equal(normalizeOwnerRole('desconocido'), 'person1');
 });
 
 test('valida el formato estándar de PushSubscription', () => {
@@ -51,8 +54,10 @@ test('el hash es estable y la comparación detecta diferencias', async () => {
 });
 
 test('limpia el contenido y crea temas válidos para Web Push', () => {
-  const notification = cleanNotification({ title: '  Luz\n', message: ' Pagada\t ', actor: 'Axel' });
+  const notification = cleanNotification({ title: '  Luz\n', message: ' Pagada\t ', actor: 'Axel', actorRole: 'person1', originDeviceId: ' telefono-1 ' });
   assert.equal(notification.title, 'Luz');
   assert.equal(notification.body, 'Pagada');
+  assert.equal(notification.actorRole, 'person1');
+  assert.equal(notification.originDeviceId, 'telefono-1');
   assert.equal(notificationTopic('HOG 12/3'), 'HOG123');
 });

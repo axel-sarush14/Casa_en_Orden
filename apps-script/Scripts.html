@@ -10,20 +10,22 @@
     !(window.google && google.script && google.script.run);
   const PWA_CHANNEL = document.body.dataset.pwaChannel || '';
   let PWA_ACCESS_TOKEN = '';
+  let PWA_DEVICE_ID = '';
+  let PWA_DEVICE_OWNER = '';
 
   const state = {
-    data: { settings: {}, items: [], activity: [] },
+    data: { settings: {}, items: [], activity: [], catalog: [] },
     actor: localStorage.getItem(STORAGE_ACTOR) || '',
     activeView: 'home',
     filter: 'Todos',
     search: '',
     selectedId: '',
     syncing: false,
-    refreshTimer: null,
     latestActivityId: '',
     confirmResolve: null,
     settingsDirty: false,
-    authenticated: false
+    authenticated: false,
+    remoteRefreshPending: false
   };
 
   const els = {
@@ -36,6 +38,9 @@
     toastRegion: $('#toastRegion'), actorSheet: $('#actorSheet'), actorOptions: $('#actorOptions'),
     formSheet: $('#formSheet'), itemForm: $('#itemForm'), formTitle: $('#formSheetTitle'),
     formKicker: $('#formSheetKicker'), saveItemButton: $('#saveItemButton'),
+    catalogList: $('#catalogList'), catalogSearch: $('#catalogSearch'), catalogSuggestions: $('#catalogSuggestions'),
+    selectedCatalog: $('#selectedCatalog'), catalogFormSheet: $('#catalogFormSheet'), catalogForm: $('#catalogForm'),
+    saveCatalogButton: $('#saveCatalogButton'), toggleCatalogButton: $('#toggleCatalogButton'),
     detailSheet: $('#detailSheet'), detailContent: $('#detailContent'), settingsForm: $('#settingsForm'),
     confirmDialog: $('#confirmDialog'), confirmTitle: $('#confirmTitle'), confirmMessage: $('#confirmMessage'),
     confirmAccept: $('#confirmAccept'), confirmCancel: $('#confirmCancel')
@@ -82,7 +87,12 @@
     document.addEventListener('keydown', handleKeyboard);
     els.itemForm.addEventListener('submit', handleItemSubmit);
     els.itemForm.addEventListener('change', event => {
-      if (event.target.name === 'type') updateConditionalFields();
+      if (event.target.name === 'type') {
+        const selected = findCatalogEntry($('#itemCatalogId').value);
+        if (selected && selected.category !== event.target.value) clearSelectedCatalog();
+        updateConditionalFields();
+      }
+      if (event.target.name === 'serviceMode' || event.target.name === 'recurrence') updateConditionalFields();
       if (event.target.id === 'itemFile') {
         const file = event.target.files[0];
         $('#itemFileLabel').textContent = file ? file.name : 'Agregar foto o comprobante';
@@ -90,15 +100,41 @@
     });
     els.settingsForm.addEventListener('input', () => { state.settingsDirty = true; });
     els.settingsForm.addEventListener('submit', handleSettingsSubmit);
+    $('#deviceSettingsButton').addEventListener('click', () => postToPwa({ type: 'casa-en-orden:open-notification-settings' }));
+    els.catalogSearch.addEventListener('input', renderCatalogSuggestions);
+    els.catalogSearch.addEventListener('focus', renderCatalogSuggestions);
+    els.catalogSuggestions.addEventListener('click', handleCatalogSuggestion);
+    els.selectedCatalog.addEventListener('click', event => {
+      if (event.target.closest('[data-clear-catalog]')) clearSelectedCatalog();
+    });
+    els.catalogForm.addEventListener('submit', handleCatalogSubmit);
+    els.toggleCatalogButton.addEventListener('click', handleCatalogToggle);
     els.actorOptions.addEventListener('click', handleActorChoice);
     els.detailContent.addEventListener('click', handleDetailClick);
     els.detailContent.addEventListener('change', handleDetailChange);
     els.confirmCancel.addEventListener('click', () => finishConfirm(false));
     els.confirmAccept.addEventListener('click', () => finishConfirm(true));
     window.addEventListener('message', handlePwaMessage);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && state.authenticated) requestFreshData('foreground');
+    });
+    window.addEventListener('pageshow', () => {
+      if (state.authenticated && !state.syncing) requestFreshData('foreground');
+    });
   }
 
   function handleGlobalClick(event) {
+    const catalogAdd = event.target.closest('[data-open-catalog-form]');
+    if (catalogAdd) {
+      openCatalogForm();
+      return;
+    }
+    const catalogCard = event.target.closest('[data-catalog-id]');
+    if (catalogCard) {
+      const entry = findCatalogEntry(catalogCard.dataset.catalogId);
+      if (entry) openCatalogForm(entry);
+      return;
+    }
     const addButton = event.target.closest('[data-open-form]');
     if (addButton) {
       openForm();
@@ -141,7 +177,6 @@
       state.latestActivityId = data.activity[0] ? data.activity[0].id : '';
       renderAll();
       postPwaState();
-      scheduleRefresh();
 
       if (!options.initial && previousActivityId && state.latestActivityId !== previousActivityId) {
         const newest = data.activity[0];
@@ -167,6 +202,7 @@
     renderDashboard();
     renderPending();
     renderActivity();
+    renderCatalogList();
     renderActorOptions();
     renderResponsibleChoices();
     if (!state.settingsDirty) renderSettings();
@@ -272,7 +308,21 @@
     $('#settingPerson2Name').value = settings.person2Name || '';
     $('#settingPerson2Email').value = settings.person2Email || '';
     $('#settingSendEmails').checked = Boolean(settings.sendEmails);
-    $('#settingRefresh').value = String(settings.refreshSeconds || 30);
+    $('#deviceOwnerLabel').textContent = PWA_DEVICE_OWNER ? `Este teléfono es de ${firstName(PWA_DEVICE_OWNER)}` : 'Este teléfono está vinculado';
+  }
+
+  function renderCatalogList() {
+    const entries = state.data.catalog || [];
+    els.catalogList.innerHTML = entries.length ? entries.map(entry => {
+      const summary = catalogEntrySummary(entry) || `${entry.category}${entry.location ? ` · ${entry.location}` : ''}`;
+      const thumb = entry.imageUrl
+        ? `<span class="catalog-thumb"><img src="${escapeAttr(entry.imageUrl)}" alt="" loading="lazy"></span>`
+        : `<span class="catalog-thumb">${typeIcon(entry.category)}</span>`;
+      return `<button class="catalog-card ${entry.active ? '' : 'is-inactive'}" type="button" data-catalog-id="${escapeAttr(entry.id)}">
+        ${thumb}<span class="catalog-card-copy"><strong>${escapeHtml(entry.alias)}</strong><small>${escapeHtml(summary)}</small></span>
+        <span class="status-badge">${entry.active ? 'Activo' : 'Inactivo'}</span>
+      </button>`;
+    }).join('') : emptyState('📦', 'Tu catálogo está vacío', 'Agrega focos, filtros, papel y otros productos que necesiten recordar.');
   }
 
   function summaryCard(icon, number, label, className) {
@@ -286,6 +336,7 @@
     const meta = [];
     if (item.amount !== '' && item.amount != null) meta.push(`<strong class="item-amount">${currency(item.amount)}</strong>`);
     if (due) meta.push(`<span>${escapeHtml(due)}</span>`);
+    if (item.type === 'Servicio' && item.serviceMode === 'Recurrente') meta.push(`<span>↻ ${escapeHtml(item.recurrence || 'Recurrente')}</span>`);
     if (item.quantity !== '' && item.quantity != null && Number(item.quantity) > 0 && item.type !== 'Servicio') meta.push(`<span>Cant. ${number(item.quantity)}</span>`);
     if (options.detailed && item.responsible) meta.push(`<span>Responsable: ${escapeHtml(item.responsible)}</span>`);
     if (!options.detailed && item.createdBy) meta.push(`<span>${item.createdBy === state.actor ? 'Lo agregaste tú' : `${escapeHtml(item.createdBy)} lo agregó`}</span>`);
@@ -327,6 +378,7 @@
 
   function openForm(item = null) {
     els.itemForm.reset();
+    clearSelectedCatalog();
     $('#itemFileLabel').textContent = 'Agregar foto o comprobante';
     $('#itemId').value = item ? item.id : '';
     els.formTitle.textContent = item ? 'Editar pendiente' : 'Nuevo pendiente';
@@ -341,12 +393,22 @@
       $('#itemAmount').value = item.amount === '' ? '' : item.amount;
       $('#itemPortal').value = item.portalUrl || '';
       $('#itemDueDate').value = item.dueDate || '';
+      $('#itemCatalogId').value = item.catalogId || '';
+      setRadio('serviceMode', item.serviceMode || 'Único');
+      $('#itemRecurrence').value = item.recurrence || 'Mensual';
+      $('#itemRecurrenceDays').value = item.recurrenceDays || '';
+      $('#itemRepeatAmount').checked = Boolean(item.repeatAmount);
       setRadio('priority', item.priority || 'Normal');
       renderResponsibleChoices(item.responsible);
+      const catalogEntry = findCatalogEntry(item.catalogId);
+      if (catalogEntry) showSelectedCatalog(catalogEntry);
     } else {
       renderResponsibleChoices(state.actor);
       setRadio('type', 'Despensa');
       setRadio('priority', 'Normal');
+      setRadio('serviceMode', 'Único');
+      $('#itemRecurrence').value = 'Mensual';
+      $('#itemRepeatAmount').checked = true;
     }
     updateConditionalFields();
     openSheet(els.formSheet);
@@ -356,8 +418,69 @@
   function updateConditionalFields() {
     const type = checkedValue('type');
     const isService = type === 'Servicio';
+    const isRecurring = isService && checkedValue('serviceMode') === 'Recurrente';
     $('#amountField').hidden = !isService;
-    $('#portalField').hidden = !isService;
+    $('#serviceOptions').hidden = !isService;
+    $('#recurrenceFields').hidden = !isRecurring;
+    $('#customRecurrenceField').hidden = !isRecurring || $('#itemRecurrence').value !== 'Personalizada';
+    $('#itemDueDate').required = isRecurring;
+    $('#itemRecurrenceDays').required = isRecurring && $('#itemRecurrence').value === 'Personalizada';
+    $('#itemPortalLabel').innerHTML = isService ? 'Portal de pago <span>opcional</span>' : 'Enlace de compra <span>opcional</span>';
+    renderCatalogSuggestions();
+  }
+
+  function renderCatalogSuggestions() {
+    if ($('#itemCatalogId').value) {
+      els.catalogSuggestions.hidden = true;
+      return;
+    }
+    const query = normalizeText(els.catalogSearch.value);
+    const type = checkedValue('type');
+    const entries = (state.data.catalog || []).filter(entry => entry.active && entry.category === type && (
+      !query || normalizeText(`${entry.alias} ${entry.name} ${entry.brand} ${entry.model} ${entry.location} ${entry.specification}`).includes(query)
+    )).slice(0, 7);
+    if (!entries.length) {
+      els.catalogSuggestions.hidden = true;
+      els.catalogSuggestions.innerHTML = '';
+      return;
+    }
+    els.catalogSuggestions.innerHTML = entries.map(entry => `<button class="catalog-suggestion" type="button" data-select-catalog="${escapeAttr(entry.id)}">
+      <span>${typeIcon(entry.category)}</span><span><strong>${escapeHtml(entry.alias)}</strong><small>${escapeHtml(catalogEntrySummary(entry) || entry.category)}</small></span>
+    </button>`).join('');
+    els.catalogSuggestions.hidden = false;
+  }
+
+  function handleCatalogSuggestion(event) {
+    const button = event.target.closest('[data-select-catalog]');
+    if (!button) return;
+    const entry = findCatalogEntry(button.dataset.selectCatalog);
+    if (entry) applyCatalogEntry(entry);
+  }
+
+  function applyCatalogEntry(entry) {
+    setRadio('type', entry.category);
+    $('#itemCatalogId').value = entry.id;
+    $('#itemTitle').value = entry.alias;
+    $('#itemDetail').value = catalogEntryDetail(entry);
+    $('#itemPortal').value = entry.purchaseUrl || '';
+    showSelectedCatalog(entry);
+    updateConditionalFields();
+  }
+
+  function showSelectedCatalog(entry) {
+    els.catalogSearch.value = entry.alias;
+    els.catalogSuggestions.hidden = true;
+    els.selectedCatalog.innerHTML = `<span class="catalog-thumb">${typeIcon(entry.category)}</span><span><strong>${escapeHtml(entry.alias)}</strong><small>${escapeHtml(catalogEntrySummary(entry) || 'Datos del catálogo aplicados')}</small></span><button class="clear-catalog" type="button" data-clear-catalog aria-label="Quitar vínculo con el catálogo">×</button>`;
+    els.selectedCatalog.hidden = false;
+  }
+
+  function clearSelectedCatalog() {
+    $('#itemCatalogId').value = '';
+    els.catalogSearch.value = '';
+    els.catalogSuggestions.hidden = true;
+    els.catalogSuggestions.innerHTML = '';
+    els.selectedCatalog.hidden = true;
+    els.selectedCatalog.innerHTML = '';
   }
 
   async function handleItemSubmit(event) {
@@ -374,7 +497,13 @@
       priority: form.get('priority'),
       responsible: form.get('responsible'),
       portalUrl: form.get('portalUrl'),
-      actor: state.actor
+      actor: state.actor,
+      catalogId: form.get('catalogId') || '',
+      serviceMode: form.get('serviceMode') || 'Único',
+      recurrence: form.get('recurrence') || '',
+      recurrenceDays: form.get('recurrenceDays') || '',
+      repeatAmount: form.get('repeatAmount') === 'on',
+      originDeviceId: PWA_DEVICE_ID
     };
     const attachment = $('#itemFile').files[0];
     if (attachment && attachment.size > 5 * 1024 * 1024) {
@@ -411,7 +540,7 @@
     const payload = {
       homeName: form.get('homeName'), person1Name: form.get('person1Name'), person1Email: form.get('person1Email'),
       person2Name: form.get('person2Name'), person2Email: form.get('person2Email'),
-      sendEmails: form.get('sendEmails') === 'on', refreshSeconds: Number(form.get('refreshSeconds')), actor: state.actor
+      sendEmails: form.get('sendEmails') === 'on', actor: state.actor
     };
     setBusy(button, true);
     try {
@@ -432,6 +561,74 @@
     }
   }
 
+  function openCatalogForm(entry = null) {
+    els.catalogForm.reset();
+    $('#catalogId').value = entry ? entry.id : '';
+    $('#catalogFormTitle').textContent = entry ? 'Editar producto' : 'Nuevo producto';
+    els.saveCatalogButton.textContent = entry ? 'Guardar cambios' : 'Guardar en catálogo';
+    els.toggleCatalogButton.hidden = !entry;
+    if (entry) {
+      $('#catalogAlias').value = entry.alias || '';
+      $('#catalogCategory').value = entry.category || 'Despensa';
+      $('#catalogLocation').value = entry.location || '';
+      $('#catalogName').value = entry.name || '';
+      $('#catalogBrand').value = entry.brand || '';
+      $('#catalogModel').value = entry.model || '';
+      $('#catalogSpecification').value = entry.specification || '';
+      $('#catalogPresentation').value = entry.presentation || '';
+      $('#catalogPurchaseUrl').value = entry.purchaseUrl || '';
+      $('#catalogImageUrl').value = entry.imageUrl || '';
+      els.toggleCatalogButton.textContent = entry.active ? 'Desactivar producto' : 'Volver a activar producto';
+      els.toggleCatalogButton.classList.toggle('danger-text', entry.active);
+    }
+    openSheet(els.catalogFormSheet);
+    setTimeout(() => $('#catalogAlias').focus(), 310);
+  }
+
+  async function handleCatalogSubmit(event) {
+    event.preventDefault();
+    const form = new FormData(els.catalogForm);
+    const payload = {
+      id: form.get('id') || '', alias: form.get('alias'), category: form.get('category'),
+      location: form.get('location'), name: form.get('name'), brand: form.get('brand'),
+      model: form.get('model'), specification: form.get('specification'), presentation: form.get('presentation'),
+      purchaseUrl: form.get('purchaseUrl'), imageUrl: form.get('imageUrl'), actor: state.actor
+    };
+    setBusy(els.saveCatalogButton, true);
+    try {
+      await api('saveCatalogEntry', payload);
+      closeSheets();
+      toast(payload.id ? 'Producto del catálogo actualizado.' : 'Producto guardado en el catálogo.');
+      await loadData();
+    } catch (error) {
+      toast(errorMessage(error), 'error', 6000);
+    } finally {
+      setBusy(els.saveCatalogButton, false);
+    }
+  }
+
+  async function handleCatalogToggle() {
+    const entry = findCatalogEntry($('#catalogId').value);
+    if (!entry) return;
+    const accepted = await confirmAction(
+      entry.active ? '¿Desactivar este producto?' : '¿Volver a activar este producto?',
+      entry.active ? 'Ya no aparecerá al buscar en el catálogo, pero no se borrará.' : 'Volverá a aparecer en las búsquedas del catálogo.',
+      entry.active ? 'Sí, desactivar' : 'Sí, activar'
+    );
+    if (!accepted) return;
+    setBusy(els.toggleCatalogButton, true);
+    try {
+      await api('setCatalogEntryActive', entry.id, !entry.active, state.actor);
+      closeSheets();
+      toast(entry.active ? 'Producto desactivado.' : 'Producto activado.');
+      await loadData();
+    } catch (error) {
+      toast(errorMessage(error), 'error', 6000);
+    } finally {
+      setBusy(els.toggleCatalogButton, false);
+    }
+  }
+
   function handleActorChoice(event) {
     const button = event.target.closest('[data-actor]');
     if (!button) return;
@@ -441,7 +638,7 @@
     renderActorOptions();
     renderResponsibleChoices();
     closeSheets();
-    toast(`Ahora usas la app como ${state.actor}.`);
+    toast(`Registrarás temporalmente como ${state.actor}.`);
     postPwaState();
   }
 
@@ -453,12 +650,16 @@
     const statusClass = item.priority === 'Urgente' ? 'urgent' : item.status === 'Completado' ? 'complete' : '';
     const actionLabel = item.status === 'Completado' ? 'Reabrir pendiente' : item.type === 'Servicio' ? 'Marcar como pagado' : item.type === 'Despensa' ? 'Marcar como comprado' : 'Marcar como completado';
     const actionIcon = item.status === 'Completado' ? '↻' : '<svg class="icon"><use href="#i-check"/></svg>';
+    const recurrenceCopy = item.type === 'Servicio' && item.serviceMode === 'Recurrente'
+      ? `<p class="detail-description">↻ Pago recurrente: ${escapeHtml(item.recurrence || 'programado')}${item.recurrence === 'Personalizada' && item.recurrenceDays ? ` cada ${number(item.recurrenceDays)} días` : ''}. Al pagarlo se creará el siguiente.</p>`
+      : '';
 
     els.detailContent.innerHTML = `<div class="detail-top">
       <div><span class="detail-type">${typeIcon(item.type)} ${escapeHtml(item.type)}</span><h2 id="detailTitle" class="detail-title">${escapeHtml(item.title)}</h2></div>
       <button class="icon-button" type="button" data-detail-action="close" aria-label="Cerrar"><svg class="icon"><use href="#i-close"/></svg></button>
     </div>
     ${item.detail ? `<p class="detail-description">${escapeHtml(item.detail)}</p>` : ''}
+    ${recurrenceCopy}
     <div class="detail-grid">
       <div class="detail-stat"><small>Estado</small><strong><span class="status-badge ${statusClass}">${escapeHtml(item.status)}</span></strong></div>
       <div class="detail-stat"><small>Responsable</small><strong>${escapeHtml(item.responsible || 'Sin asignar')}</strong></div>
@@ -472,7 +673,7 @@
         <button class="secondary-button" type="button" data-detail-action="edit"><svg class="icon"><use href="#i-edit"/></svg> Editar</button>
         <label class="secondary-button attachment-label"><svg class="icon"><use href="#i-upload"/></svg> ${item.receiptUrl ? 'Cambiar archivo' : 'Adjuntar archivo'}<input type="file" data-receipt-input accept="image/jpeg,image/png,image/webp,application/pdf"></label>
       </div>
-      ${item.portalUrl ? `<a class="secondary-button detail-link" href="${escapeAttr(item.portalUrl)}" target="_blank" rel="noopener"><svg class="icon"><use href="#i-external"/></svg> Abrir portal de pago</a>` : ''}
+      ${item.portalUrl ? `<a class="secondary-button detail-link" href="${escapeAttr(item.portalUrl)}" target="_blank" rel="noopener"><svg class="icon"><use href="#i-external"/></svg> ${item.type === 'Servicio' ? 'Abrir portal de pago' : 'Abrir enlace de compra'}</a>` : ''}
       ${item.status === 'Pendiente' ? '<button class="text-button danger-text" type="button" data-detail-action="cancel">Cancelar este pendiente</button>' : ''}
     </div>`;
     openSheet(els.detailSheet);
@@ -509,9 +710,12 @@
   async function changeStatus(item, status, button) {
     setBusy(button, true);
     try {
-      await api('setItemStatus', item.id, status, state.actor);
+      const result = await api('setItemStatus', item.id, status, state.actor, PWA_DEVICE_ID);
       closeSheets();
-      toast(status === 'Completado' ? '¡Listo! Quedó completado.' : status === 'Cancelado' ? 'Pendiente cancelado.' : 'Pendiente reabierto.');
+      const completedMessage = result.nextItem
+        ? `Pago registrado. Se programó el siguiente para ${shortDate(result.nextItem.dueDate)}.`
+        : '¡Listo! Quedó completado.';
+      toast(status === 'Completado' ? completedMessage : status === 'Cancelado' ? 'Pendiente cancelado.' : 'Pendiente reabierto.');
       await loadData();
     } catch (error) {
       toast(errorMessage(error), 'error', 6000);
@@ -561,6 +765,10 @@
     });
     if (els.confirmDialog.hidden) els.overlay.hidden = true;
     document.body.style.overflow = '';
+    if (state.remoteRefreshPending && els.confirmDialog.hidden) {
+      state.remoteRefreshPending = false;
+      setTimeout(() => loadData({ event: 'deferred-push' }), 80);
+    }
   }
 
   function confirmAction(title, message, acceptLabel) {
@@ -604,6 +812,33 @@
       return;
     }
 
+    if (data.type === 'casa-en-orden:refresh') {
+      requestFreshData('push');
+      return;
+    }
+
+    if (data.type === 'casa-en-orden:open-new-item') {
+      if (data.actor) {
+        const people = [state.data.settings.person1Name, state.data.settings.person2Name];
+        if (people.includes(data.actor)) state.actor = data.actor;
+      }
+      renderChrome();
+      renderActorOptions();
+      renderResponsibleChoices();
+      openForm();
+      return;
+    }
+
+    if (data.type === 'casa-en-orden:open-item') {
+      if (data.itemId && findItem(data.itemId)) openDetail(data.itemId);
+      return;
+    }
+
+    if (data.type === 'casa-en-orden:open-view') {
+      if (['home', 'pending', 'history', 'profile'].includes(data.view)) navigate(data.view);
+      return;
+    }
+
     if (data.type === 'casa-en-orden:configure-push-bridge') {
       try {
         const result = await api('configurarPuentePushPWA', {
@@ -613,6 +848,8 @@
           pwaUrl: data.pwaUrl
         });
         PWA_ACCESS_TOKEN = String(data.appAccessToken || '');
+        PWA_DEVICE_ID = String(data.deviceId || '');
+        PWA_DEVICE_OWNER = String(data.deviceOwner || '');
         const firstAuthentication = !state.authenticated;
         state.authenticated = true;
         postToPwa({ type: 'casa-en-orden:bridge-result', ok: Boolean(result && result.ok) });
@@ -655,12 +892,15 @@
     els.loading.appendChild(detail);
   }
 
-  function scheduleRefresh() {
-    clearInterval(state.refreshTimer);
-    const seconds = Math.max(15, Number(state.data.settings.refreshSeconds) || 30);
-    state.refreshTimer = setInterval(() => {
-      if (document.visibilityState === 'visible' && !$('.bottom-sheet.is-open') && els.confirmDialog.hidden) loadData();
-    }, seconds * 1000);
+  function requestFreshData(source) {
+    if (!state.authenticated || state.syncing) return;
+    if ($('.bottom-sheet.is-open') || !els.confirmDialog.hidden || state.settingsDirty) {
+      state.remoteRefreshPending = true;
+      if (source === 'push') toast('Hay cambios nuevos. Se actualizarán al cerrar esta ventana.');
+      return;
+    }
+    state.remoteRefreshPending = false;
+    loadData({ event: source });
   }
 
   function showSync(message, syncing = false) {
@@ -697,6 +937,15 @@
   }
 
   function findItem(id) { return state.data.items.find(item => item.id === id); }
+  function findCatalogEntry(id) { return (state.data.catalog || []).find(entry => entry.id === id); }
+  function catalogEntrySummary(entry) {
+    return [entry.brand, entry.model, entry.specification, entry.presentation, entry.location ? `Para ${entry.location}` : '']
+      .filter(Boolean).join(' · ');
+  }
+  function catalogEntryDetail(entry) {
+    const values = [entry.name, entry.brand, entry.model, entry.specification, entry.presentation, entry.location ? `Ubicación: ${entry.location}` : ''];
+    return [...new Set(values.filter(Boolean))].join(' · ').slice(0, 500);
+  }
   function prioritySort(a, b) {
     if (a.priority !== b.priority) return a.priority === 'Urgente' ? -1 : 1;
     if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
@@ -783,14 +1032,29 @@
           if (method === 'setItemStatus') {
             const [id, status, actor] = args; const item = data.items.find(entry => entry.id === id); if (!item) throw new Error('El pendiente ya no existe.');
             item.status = status; item.updatedAt = new Date().toISOString(); item.completedBy = status === 'Completado' ? actor : ''; item.completedAt = status === 'Completado' ? item.updatedAt : '';
-            const verb = status === 'Completado' ? 'Completó' : status === 'Cancelado' ? 'Canceló' : 'Reabrió'; demoActivity(data, id, verb, `${verb} ${item.title}`, actor); saveDemo(data); return resolve({ ok: true, item });
+            let nextItem = null;
+            if (status === 'Completado' && item.type === 'Servicio' && item.serviceMode === 'Recurrente') {
+              nextItem = { ...item, id:`HOG-${Math.random().toString(16).slice(2, 10).toUpperCase()}`, status:'Pendiente', amount:item.repeatAmount ? item.amount : '', dueDate:demoNextDate(item.dueDate, item.recurrence, item.recurrenceDays), createdBy:'Casa en Orden', createdAt:item.updatedAt, completedBy:'', completedAt:'', receiptUrl:'', receiptName:'', previousItemId:item.id };
+              data.items.unshift(nextItem);
+            }
+            const verb = status === 'Completado' ? 'Completó' : status === 'Cancelado' ? 'Canceló' : 'Reabrió'; demoActivity(data, id, verb, `${verb} ${item.title}`, actor); saveDemo(data); return resolve({ ok: true, item, nextItem });
           }
           if (method === 'uploadReceipt') {
             const payload = args[0]; const item = data.items.find(entry => entry.id === payload.itemId); if (!item) throw new Error('No encontramos el pendiente.');
             item.receiptName = payload.filename; item.receiptUrl = payload.dataUrl; item.updatedAt = new Date().toISOString(); demoActivity(data, item.id, 'Adjuntó', `Adjuntó ${payload.filename} a ${item.title}`, payload.actor); saveDemo(data); return resolve({ ok: true, item });
           }
           if (method === 'saveSettings') {
-            const payload = args[0]; data.settings = { homeName: payload.homeName, person1Name: payload.person1Name, person1Email: payload.person1Email, person2Name: payload.person2Name, person2Email: payload.person2Email, sendEmails: payload.sendEmails, refreshSeconds: payload.refreshSeconds }; saveDemo(data); return resolve({ ok: true, settings: data.settings });
+            const payload = args[0]; data.settings = { homeName: payload.homeName, person1Name: payload.person1Name, person1Email: payload.person1Email, person2Name: payload.person2Name, person2Email: payload.person2Email, sendEmails: payload.sendEmails }; saveDemo(data); return resolve({ ok: true, settings: data.settings });
+          }
+          if (method === 'saveCatalogEntry') {
+            const payload = args[0]; let entry = data.catalog.find(current => current.id === payload.id); const now = new Date().toISOString();
+            if (entry) Object.assign(entry, payload, { updatedAt: now });
+            else { entry = { ...payload, id:`CAT-${Math.random().toString(16).slice(2, 10).toUpperCase()}`, active:true, updatedAt:now }; data.catalog.push(entry); }
+            saveDemo(data); return resolve({ ok:true, entry });
+          }
+          if (method === 'setCatalogEntryActive') {
+            const [id, active] = args; const entry = data.catalog.find(current => current.id === id); if (!entry) throw new Error('El producto ya no existe en el catálogo.');
+            entry.active = Boolean(active); entry.updatedAt = new Date().toISOString(); saveDemo(data); return resolve({ ok:true, entry });
           }
           throw new Error(`Método no disponible en demo: ${method}`);
         } catch (error) { reject(error); }
@@ -800,19 +1064,29 @@
 
   function demoData() {
     const stored = localStorage.getItem(STORAGE_DEMO);
-    if (stored) { try { return JSON.parse(stored); } catch (error) { localStorage.removeItem(STORAGE_DEMO); } }
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (!Array.isArray(parsed.catalog)) parsed.catalog = [];
+        return parsed;
+      } catch (error) { localStorage.removeItem(STORAGE_DEMO); }
+    }
     const now = new Date();
     const iso = days => { const date = new Date(now); date.setDate(date.getDate() + days); return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`; };
     const timestamp = minutes => new Date(now.getTime() - minutes * 60000).toISOString();
     const data = {
-      settings: { homeName: 'Casa en Orden', person1Name: 'Axel', person1Email: '', person2Name: 'Laura', person2Email: '', sendEmails: false, refreshSeconds: 30 },
+      settings: { homeName: 'Casa en Orden', person1Name: 'Axel', person1Email: '', person2Name: 'Laura', person2Email: '', sendEmails: false },
       items: [
-        { id:'HOG-1001', type:'Servicio', title:'Luz', detail:'Recibo bimestral', quantity:1, amount:620, dueDate:iso(4), priority:'Urgente', responsible:'Axel', createdBy:'Laura', status:'Pendiente', portalUrl:'https://www.cfe.mx/', receiptUrl:'', receiptName:'', createdAt:timestamp(180), updatedAt:timestamp(5), completedBy:'', completedAt:'' },
-        { id:'HOG-1002', type:'Servicio', title:'Internet', detail:'Mensualidad', quantity:1, amount:549, dueDate:iso(8), priority:'Normal', responsible:'Axel', createdBy:'Axel', status:'Pendiente', portalUrl:'', receiptUrl:'', receiptName:'', createdAt:timestamp(300), updatedAt:timestamp(60), completedBy:'', completedAt:'' },
+        { id:'HOG-1001', type:'Servicio', title:'Luz', detail:'Recibo bimestral', quantity:1, amount:620, dueDate:iso(4), priority:'Urgente', responsible:'Axel', createdBy:'Laura', status:'Pendiente', portalUrl:'https://www.cfe.mx/', receiptUrl:'', receiptName:'', createdAt:timestamp(180), updatedAt:timestamp(5), completedBy:'', completedAt:'', serviceMode:'Recurrente', recurrence:'Bimestral', recurrenceDays:'', repeatAmount:false, seriesId:'SER-LUZ', previousItemId:'', catalogId:'' },
+        { id:'HOG-1002', type:'Servicio', title:'Internet', detail:'Mensualidad', quantity:1, amount:549, dueDate:iso(8), priority:'Normal', responsible:'Axel', createdBy:'Axel', status:'Pendiente', portalUrl:'', receiptUrl:'', receiptName:'', createdAt:timestamp(300), updatedAt:timestamp(60), completedBy:'', completedAt:'', serviceMode:'Recurrente', recurrence:'Mensual', recurrenceDays:'', repeatAmount:true, seriesId:'SER-INTERNET', previousItemId:'', catalogId:'' },
         { id:'HOG-1003', type:'Despensa', title:'Papel higiénico', detail:'Comprar dos paquetes', quantity:2, amount:'', dueDate:'', priority:'Urgente', responsible:'Axel', createdBy:'Laura', status:'Pendiente', portalUrl:'', receiptUrl:'', receiptName:'', createdAt:timestamp(10), updatedAt:timestamp(5), completedBy:'', completedAt:'' },
         { id:'HOG-1004', type:'Despensa', title:'Café y jabón de trastes', detail:'', quantity:1, amount:'', dueDate:'', priority:'Normal', responsible:'Axel', createdBy:'Laura', status:'Pendiente', portalUrl:'', receiptUrl:'', receiptName:'', createdAt:timestamp(90), updatedAt:timestamp(80), completedBy:'', completedAt:'' },
         { id:'HOG-1005', type:'Reparación', title:'Lámpara de la recámara', detail:'Comprar foco cálido, base E27', quantity:1, amount:'', dueDate:'', priority:'Normal', responsible:'Axel', createdBy:'Laura', status:'Pendiente', portalUrl:'', receiptUrl:'', receiptName:'', createdAt:timestamp(240), updatedAt:timestamp(120), completedBy:'', completedAt:'' },
         { id:'HOG-1006', type:'Despensa', title:'Huevos', detail:'', quantity:1, amount:'', dueDate:'', priority:'Normal', responsible:'Axel', createdBy:'Laura', status:'Completado', portalUrl:'', receiptUrl:'', receiptName:'', createdAt:timestamp(500), updatedAt:timestamp(70), completedBy:'Axel', completedAt:timestamp(70) }
+      ],
+      catalog: [
+        { id:'CAT-FOCO', alias:'Foco del cuarto', category:'Reparación', location:'Recámara', name:'Foco LED', brand:'Philips', model:'A60', specification:'9 W · E27 · 3000 K · luz cálida', presentation:'1 pieza', imageUrl:'', purchaseUrl:'', active:true, updatedAt:timestamp(200) },
+        { id:'CAT-PAPEL', alias:'Papel de baño', category:'Despensa', location:'Baño', name:'Papel higiénico', brand:'', model:'', specification:'Doble hoja', presentation:'Paquete de 12 rollos', imageUrl:'', purchaseUrl:'', active:true, updatedAt:timestamp(190) }
       ],
       activity: [
         { id:'ACT-1', itemId:'HOG-1003', action:'Agregó', description:'Agregó Papel higiénico', actor:'Laura', date:timestamp(5) },
@@ -823,6 +1097,13 @@
     saveDemo(data); return data;
   }
   function demoActivity(data, itemId, action, description, actor) { data.activity.unshift({ id:`ACT-${Date.now()}`, itemId, action, description, actor, date:new Date().toISOString() }); }
+  function demoNextDate(value, recurrence, customDays) {
+    const date = parseDate(value) || new Date();
+    const days = ({ Semanal:7, Quincenal:15, Personalizada:Number(customDays) || 1 })[recurrence];
+    if (days) date.setDate(date.getDate() + days);
+    else date.setMonth(date.getMonth() + (({ Mensual:1, Bimestral:2, Trimestral:3, Semestral:6, Anual:12 })[recurrence] || 1));
+    return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+  }
   function saveDemo(data) { localStorage.setItem(STORAGE_DEMO, JSON.stringify(data)); }
   function structuredCloneSafe(data) { return JSON.parse(JSON.stringify(data)); }
 })();

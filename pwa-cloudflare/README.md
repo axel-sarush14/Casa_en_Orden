@@ -1,8 +1,6 @@
-# PWA de Casa en Orden
+# PWA de Casa en Orden 4.0
 
-Este directorio es la raíz del proyecto de Cloudflare.
-
-Para desarrollo local:
+Esta carpeta es la raíz del proyecto de Cloudflare.
 
 ```bash
 npm install
@@ -16,5 +14,12 @@ Para publicar manualmente:
 npm run deploy
 ```
 
-En la conexión Git de Cloudflare usa este directorio como **Root directory** y `npx wrangler deploy` como **Deploy command**. La guía completa está en el `README.md` de la carpeta superior.
+En la conexión de GitHub con Cloudflare usa:
 
+- **Root directory:** `pwa-cloudflare`
+- **Build command:** vacío
+- **Deploy command:** `npx wrangler deploy`
+
+Al actualizar desde 3.0, conserva `HOME_OBJECT_NAME`, el nombre del Worker, `HOME_REGISTRY` y el `manifest.id`. Así se mantienen el hogar, el PIN, las suscripciones y la instalación existente.
+
+El enlace para el tag es `https://TU-WORKER.workers.dev/?modo=nfc`. Consulta la guía completa en el `README.md` de la carpeta superior.

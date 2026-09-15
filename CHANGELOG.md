@@ -1,15 +1,22 @@
 # Historial de cambios
 
+## 4.0.0 — 2026-09-11
+
+- Fija por separado el dueño de cada teléfono como persona 1 o persona 2.
+- Restaura automáticamente el perfil propio al abrir la app.
+- Mantiene el cambio manual de persona como una acción temporal.
+- Agrega acceso rápido NFC con saludo por dispositivo, alta de pendiente y acceso a la app.
+- Enruta Web Push solo a los dispositivos de la persona contraria y excluye el dispositivo de origen.
+- Sustituye la actualización periódica por sincronización al guardar, recibir un push, abrir, volver o actualizar manualmente.
+- Agrega servicios de pago único y recurrente con ocho frecuencias.
+- Genera de forma idempotente el siguiente pago al completar un servicio recurrente.
+- Agrega catálogo doméstico con alias, ubicación, marca, modelo, especificación, presentación, imagen y enlace.
+- Migra sin borrar las 18 columnas originales de `Pendientes`.
+- Conserva la identidad de instalación y el almacenamiento de 3.0 para actualizar sin crear otra app.
+
 ## 3.0.0 — 2026-08-21
 
-- Agrega PWA instalable con identificador independiente para no reemplazar otras apps del navegador.
-- Agrega notificaciones Web Push directas, sin proyecto de Firebase.
-- Genera automáticamente las llaves VAPID y los secretos del puente.
-- Permite crear el hogar y su PIN desde la primera pantalla.
-- Vincula Apps Script automáticamente al activar el primer teléfono.
-- Envía avisos al otro integrante al agregar, editar, completar, cancelar o reabrir un pendiente.
-- Agrega notificación de prueba durante la vinculación.
+- Agrega PWA instalable y notificaciones Web Push directas sin Firebase.
+- Genera automáticamente las llaves VAPID, el PIN y los secretos del puente.
 - Protege los métodos de Apps Script con un token del hogar.
-- Mantiene el fondo blanco y la paleta verde/naranja.
 - Conserva Sheets y Drive como fuente de datos.
-

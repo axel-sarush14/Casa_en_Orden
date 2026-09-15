@@ -4,6 +4,7 @@ import {
   cleanNotification,
   hashSecret,
   normalizeActor,
+  normalizeOwnerRole,
   normalizePin,
   normalizeSubscription,
   notificationTopic,
@@ -54,7 +55,7 @@ export class HomeRegistry {
   async health() {
     const claimed = Boolean(await this.ctx.storage.get('pinHash'));
     const devices = (await this.ctx.storage.get('devices')) || {};
-    return json({ ok: true, claimed, devices: Object.keys(devices).length, version: 3 });
+    return json({ ok: true, claimed, devices: Object.keys(devices).length, version: 4 });
   }
 
   async config() {
@@ -70,7 +71,7 @@ export class HomeRegistry {
       hasAppUrl: Boolean(appUrl),
       vapidPublicKey: vapid.publicKey,
       people: publicPeople(devices || {}),
-      version: 3
+      version: 4
     });
   }
 
@@ -81,6 +82,9 @@ export class HomeRegistry {
     const subscription = normalizeSubscription(body.subscription, { optional: true });
     const devices = (await this.ctx.storage.get('devices')) || {};
     const knownDevice = authenticateDevice(devices, body.deviceId, body.deviceSecret);
+    const ownerRole = body.ownerRole
+      ? normalizeOwnerRole(body.ownerRole)
+      : knownDevice?.ownerRole || inferOwnerRole(actor);
     const pinHash = await this.ctx.storage.get('pinHash');
 
     let claimedNow = false;
@@ -108,6 +112,7 @@ export class HomeRegistry {
 
     devices[deviceId] = {
       actor,
+      ownerRole,
       deviceSecret,
       subscription,
       createdAt: knownDevice && devices[deviceId].createdAt ? devices[deviceId].createdAt : Date.now(),
@@ -127,6 +132,7 @@ export class HomeRegistry {
       deviceId,
       deviceSecret,
       actor,
+      ownerRole,
       appUrl,
       notifyUrl: `${origin}/api/notify`,
       bridgeSecret,
@@ -137,7 +143,7 @@ export class HomeRegistry {
 
   async bridgeStatus(request) {
     await this.requireBridge(request);
-    return json({ ok: true, app: 'casa-en-orden', version: 3 });
+    return json({ ok: true, app: 'casa-en-orden', version: 4 });
   }
 
   async notify(request) {
@@ -145,8 +151,13 @@ export class HomeRegistry {
     const message = cleanNotification(await readJson(request));
     const devices = (await this.ctx.storage.get('devices')) || {};
     const vapid = await this.ensureVapid();
-    const recipients = Object.entries(devices).filter(([, device]) => {
-      return device.subscription && String(device.actor || '').toLocaleLowerCase('es') !== message.actor.toLocaleLowerCase('es');
+    const recipients = Object.entries(devices).filter(([deviceId, device]) => {
+      const samePerson = message.actorRole && device.ownerRole
+        ? device.ownerRole === message.actorRole
+        : String(device.actor || '').toLocaleLowerCase('es') === message.actor.toLocaleLowerCase('es');
+      return device.subscription &&
+        deviceId !== message.originDeviceId &&
+        !samePerson;
     });
 
     const payload = JSON.stringify({
@@ -154,7 +165,7 @@ export class HomeRegistry {
       body: message.body,
       actor: message.actor,
       itemId: message.itemId,
-      url: '/',
+      url: message.itemId ? `/?item=${encodeURIComponent(message.itemId)}` : '/',
       timestamp: Date.now()
     });
     const origin = new URL(request.url).origin;
@@ -288,15 +299,18 @@ export class HomeRegistry {
 }
 
 function publicPeople(devices) {
-  const names = [];
+  const names = { person1: '', person2: '' };
   Object.values(devices).forEach(device => {
     const actor = String(device.actor || '').trim();
-    if (actor && !names.some(name => name.toLocaleLowerCase('es') === actor.toLocaleLowerCase('es'))) names.push(actor);
+    if (!actor) return;
+    const role = device.ownerRole || (/^(lau|laura)$/i.test(actor) ? 'person2' : 'person1');
+    if (!names[role]) names[role] = actor;
   });
-  ['Axel', 'Laura'].forEach(name => {
-    if (names.length < 2 && !names.some(current => current.toLowerCase() === name.toLowerCase())) names.push(name);
-  });
-  return names.slice(0, 4);
+  return [names.person1 || 'Axel', names.person2 || 'Laura'];
+}
+
+function inferOwnerRole(actor) {
+  return /^(lau|laura)(\s|$)/i.test(String(actor || '').trim()) ? 'person2' : 'person1';
 }
 
 function authenticateDevice(devices, deviceId, deviceSecret) {

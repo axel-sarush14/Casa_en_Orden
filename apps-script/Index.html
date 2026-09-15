@@ -26,6 +26,7 @@
     <symbol id="i-edit" viewBox="0 0 24 24"><path d="m14 5 5 5L9 20H4v-5zM13 6l5 5"/></symbol>
     <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></symbol>
     <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M19 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h6"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5zM4 7.5l8 4.5 8-4.5M12 12v9"/></symbol>
   </svg>
 
   <div id="loadingScreen" class="loading-screen" role="status" aria-live="polite">
@@ -158,19 +159,23 @@
             <span class="toggle" aria-hidden="true"></span>
           </label>
 
-          <div class="field">
-            <label for="settingRefresh">Sincronizar automáticamente</label>
-            <select id="settingRefresh" name="refreshSeconds">
-              <option value="15">Cada 15 segundos</option>
-              <option value="30">Cada 30 segundos</option>
-              <option value="60">Cada minuto</option>
-              <option value="120">Cada 2 minutos</option>
-            </select>
-          </div>
+          <button id="deviceSettingsButton" class="secondary-button device-settings-button" type="button">
+            <svg class="icon"><use href="#i-bell"/></svg>
+            <span><strong id="deviceOwnerLabel">Este teléfono está vinculado</strong><small>Cambiar dueño o reparar notificaciones</small></span>
+          </button>
 
           <button class="primary-button" type="submit">Guardar configuración</button>
-          <p class="privacy-note">Los datos viven en tu propia Hoja de cálculo. Los comprobantes se guardan en una carpeta privada de tu Google Drive.</p>
+          <p class="privacy-note">La app se actualiza al abrirla, al volver a ella y cuando recibe un cambio. Los comprobantes se guardan en una carpeta privada de tu Google Drive.</p>
         </form>
+
+        <section class="catalog-settings-card" aria-labelledby="catalogHeading">
+          <div class="section-heading catalog-heading">
+            <div><p class="section-kicker">Datos precisos</p><h3 id="catalogHeading">Catálogo doméstico</h3></div>
+            <button class="primary-small" type="button" data-open-catalog-form>Agregar</button>
+          </div>
+          <p class="catalog-intro">Guarda modelos, medidas, tipo de luz y presentaciones para recuperarlos al crear un pendiente.</p>
+          <div id="catalogList" class="catalog-list"></div>
+        </section>
       </section>
     </main>
 
@@ -205,7 +210,7 @@
   <aside id="actorSheet" class="bottom-sheet compact-sheet" aria-hidden="true" aria-labelledby="actorSheetTitle">
     <div class="sheet-handle"></div>
     <div class="sheet-header">
-      <div><p class="section-kicker">¿Quién está usando la app?</p><h2 id="actorSheetTitle">Cambiar persona</h2></div>
+      <div><p class="section-kicker">Solo para este momento</p><h2 id="actorSheetTitle">Cambiar persona</h2></div>
       <button class="icon-button" type="button" data-close-sheet aria-label="Cerrar"><svg class="icon"><use href="#i-close"/></svg></button>
     </div>
     <div id="actorOptions" class="actor-options"></div>
@@ -220,6 +225,7 @@
 
     <form id="itemForm" class="item-form">
       <input id="itemId" name="id" type="hidden">
+      <input id="itemCatalogId" name="catalogId" type="hidden">
       <fieldset class="category-fieldset">
         <legend>¿Qué necesitan?</legend>
         <div class="category-grid">
@@ -229,6 +235,18 @@
           <label class="category-option"><input type="radio" name="type" value="Otro"><span><b>•••</b>Otro</span></label>
         </div>
       </fieldset>
+
+      <div id="catalogPicker" class="catalog-picker">
+        <div class="field">
+          <label for="catalogSearch">Buscar en el catálogo <span>opcional</span></label>
+          <div class="catalog-search-wrap">
+            <svg class="icon"><use href="#i-search"/></svg>
+            <input id="catalogSearch" type="search" autocomplete="off" placeholder="Ej. Foco del cuarto">
+          </div>
+          <div id="catalogSuggestions" class="catalog-suggestions" hidden></div>
+        </div>
+        <div id="selectedCatalog" class="selected-catalog" hidden></div>
+      </div>
 
       <div class="field">
         <label for="itemTitle">Título</label>
@@ -250,10 +268,44 @@
         </div>
       </div>
 
-      <div id="portalField" class="field conditional-field" hidden>
-        <label for="itemPortal">Portal de pago <span>opcional</span></label>
+      <div id="portalField" class="field conditional-field">
+        <label id="itemPortalLabel" for="itemPortal">Enlace de compra <span>opcional</span></label>
         <input id="itemPortal" name="portalUrl" type="url" inputmode="url" placeholder="https://…">
       </div>
+
+      <section id="serviceOptions" class="service-options conditional-field" hidden>
+        <fieldset class="choice-fieldset">
+          <legend>Tipo de pago</legend>
+          <div class="segmented">
+            <label><input type="radio" name="serviceMode" value="Único" checked><span>Único</span></label>
+            <label><input type="radio" name="serviceMode" value="Recurrente"><span>Recurrente</span></label>
+          </div>
+        </fieldset>
+        <div id="recurrenceFields" class="recurrence-fields" hidden>
+          <div class="field">
+            <label for="itemRecurrence">¿Cada cuánto se repite?</label>
+            <select id="itemRecurrence" name="recurrence">
+              <option value="Mensual">Mensual</option>
+              <option value="Bimestral">Bimestral</option>
+              <option value="Trimestral">Trimestral</option>
+              <option value="Semestral">Semestral</option>
+              <option value="Anual">Anual</option>
+              <option value="Quincenal">Quincenal</option>
+              <option value="Semanal">Semanal</option>
+              <option value="Personalizada">Personalizada</option>
+            </select>
+          </div>
+          <div id="customRecurrenceField" class="field" hidden>
+            <label for="itemRecurrenceDays">Repetir cada cuántos días</label>
+            <input id="itemRecurrenceDays" name="recurrenceDays" type="number" min="1" max="730" step="1" inputmode="numeric" placeholder="Ej. 45">
+          </div>
+          <label class="toggle-row compact-toggle">
+            <span><strong>Repetir el monto</strong><small>Útil para pagos fijos como Internet.</small></span>
+            <input id="itemRepeatAmount" name="repeatAmount" type="checkbox" checked>
+            <span class="toggle" aria-hidden="true"></span>
+          </label>
+        </div>
+      </section>
 
       <fieldset class="choice-fieldset">
         <legend>Responsable</legend>
@@ -282,6 +334,70 @@
       <div class="form-actions">
         <button id="saveItemButton" class="primary-button" type="submit">Guardar y avisar</button>
         <small id="notificationHelper"><svg class="icon icon-xs"><use href="#i-bell"/></svg> La otra persona verá el cambio al instante.</small>
+      </div>
+    </form>
+  </aside>
+
+  <aside id="catalogFormSheet" class="bottom-sheet form-sheet" aria-hidden="true" aria-labelledby="catalogFormTitle">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header sticky-sheet-header">
+      <div><p class="section-kicker">Catálogo doméstico</p><h2 id="catalogFormTitle">Nuevo producto</h2></div>
+      <button class="icon-button" type="button" data-close-sheet aria-label="Cerrar"><svg class="icon"><use href="#i-close"/></svg></button>
+    </div>
+    <form id="catalogForm" class="item-form">
+      <input id="catalogId" name="id" type="hidden">
+      <div class="field">
+        <label for="catalogAlias">Nombre rápido</label>
+        <input id="catalogAlias" name="alias" maxlength="120" placeholder="Ej. Foco del cuarto" required>
+      </div>
+      <div class="two-columns">
+        <div class="field">
+          <label for="catalogCategory">Categoría</label>
+          <select id="catalogCategory" name="category" required>
+            <option value="Despensa">Despensa</option>
+            <option value="Reparación">Reparación</option>
+            <option value="Servicio">Servicio</option>
+            <option value="Otro">Otro</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="catalogLocation">Ubicación <span>opcional</span></label>
+          <input id="catalogLocation" name="location" maxlength="100" placeholder="Ej. Recámara">
+        </div>
+      </div>
+      <div class="field">
+        <label for="catalogName">Producto <span>opcional</span></label>
+        <input id="catalogName" name="name" maxlength="120" placeholder="Ej. Foco LED">
+      </div>
+      <div class="two-columns">
+        <div class="field">
+          <label for="catalogBrand">Marca <span>opcional</span></label>
+          <input id="catalogBrand" name="brand" maxlength="100" placeholder="Ej. Philips">
+        </div>
+        <div class="field">
+          <label for="catalogModel">Modelo <span>opcional</span></label>
+          <input id="catalogModel" name="model" maxlength="100" placeholder="Ej. A60">
+        </div>
+      </div>
+      <div class="field">
+        <label for="catalogSpecification">Especificaciones <span>opcional</span></label>
+        <textarea id="catalogSpecification" name="specification" maxlength="500" rows="3" placeholder="Ej. 9 W · E27 · 3000 K · luz cálida"></textarea>
+      </div>
+      <div class="field">
+        <label for="catalogPresentation">Presentación <span>opcional</span></label>
+        <input id="catalogPresentation" name="presentation" maxlength="120" placeholder="Ej. Paquete de 12 rollos">
+      </div>
+      <div class="field">
+        <label for="catalogPurchaseUrl">Enlace de compra <span>opcional</span></label>
+        <input id="catalogPurchaseUrl" name="purchaseUrl" type="url" inputmode="url" placeholder="https://…">
+      </div>
+      <div class="field">
+        <label for="catalogImageUrl">URL de imagen <span>opcional</span></label>
+        <input id="catalogImageUrl" name="imageUrl" type="url" inputmode="url" placeholder="https://…">
+      </div>
+      <div class="form-actions catalog-form-actions">
+        <button id="saveCatalogButton" class="primary-button" type="submit">Guardar en catálogo</button>
+        <button id="toggleCatalogButton" class="text-button danger-text" type="button" hidden>Desactivar producto</button>
       </div>
     </form>
   </aside>

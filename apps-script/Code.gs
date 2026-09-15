@@ -3,22 +3,34 @@ const APP = Object.freeze({
   SHEETS: Object.freeze({
     ITEMS: 'Pendientes',
     ACTIVITY: 'Actividad',
-    SETTINGS: 'Configuracion'
+    SETTINGS: 'Configuracion',
+    CATALOG: 'Catalogo'
   }),
   ITEM_HEADERS: Object.freeze([
     'ID', 'Tipo', 'Titulo', 'Detalle', 'Cantidad', 'Monto',
     'FechaVencimiento', 'Prioridad', 'Responsable', 'CreadoPor',
     'Estado', 'PortalURL', 'ComprobanteURL', 'ComprobanteNombre',
     'FechaCreacion', 'FechaActualizacion', 'CompletadoPor',
-    'FechaCompletado'
+    'FechaCompletado', 'CatalogoID', 'ServicioModalidad', 'Frecuencia',
+    'DiasFrecuencia', 'RepetirMonto', 'SerieID', 'AnteriorID'
   ]),
   ACTIVITY_HEADERS: Object.freeze([
     'ID', 'PendienteID', 'Accion', 'Descripcion', 'Actor', 'Fecha'
   ]),
   SETTINGS_HEADERS: Object.freeze(['Clave', 'Valor']),
+  CATALOG_HEADERS: Object.freeze([
+    'ID', 'Alias', 'Categoria', 'Ubicacion', 'Nombre', 'Marca', 'Modelo',
+    'Especificacion', 'Presentacion', 'ImagenURL', 'CompraURL', 'Activo',
+    'FechaActualizacion'
+  ]),
   TYPES: Object.freeze(['Despensa', 'Servicio', 'Reparación', 'Otro']),
   PRIORITIES: Object.freeze(['Normal', 'Urgente']),
   STATUSES: Object.freeze(['Pendiente', 'Completado', 'Cancelado']),
+  SERVICE_MODES: Object.freeze(['Único', 'Recurrente']),
+  RECURRENCES: Object.freeze([
+    'Semanal', 'Quincenal', 'Mensual', 'Bimestral', 'Trimestral',
+    'Semestral', 'Anual', 'Personalizada'
+  ]),
   MAX_ATTACHMENT_BYTES: 5 * 1024 * 1024
 });
 
@@ -74,6 +86,7 @@ function getBootstrapData(accessToken) {
     settings: getSettings_(),
     items: getItems_(),
     activity: getActivity_(60),
+    catalog: getCatalog_(),
     pushConfigured: isPushConfigured_(),
     serverTime: new Date().toISOString()
   };
@@ -116,7 +129,14 @@ function saveItem(payload, accessToken) {
       createdAt: current ? current.createdAtRaw : now,
       updatedAt: now,
       completedBy: current ? current.completedBy : '',
-      completedAt: current ? current.completedAtRaw : ''
+      completedAt: current ? current.completedAtRaw : '',
+      catalogId: data.catalogId,
+      serviceMode: data.type === 'Servicio' ? data.serviceMode : '',
+      recurrence: data.isRecurring ? data.recurrence : '',
+      recurrenceDays: data.isRecurring ? data.recurrenceDays : '',
+      repeatAmount: data.isRecurring ? data.repeatAmount : false,
+      seriesId: data.isRecurring ? (current && current.seriesId ? current.seriesId : createId_('SER')) : '',
+      previousItemId: current ? current.previousItemId : ''
     };
 
     const row = itemToRow_(item);
@@ -134,7 +154,8 @@ function saveItem(payload, accessToken) {
       title: item.title,
       message: `${item.type} · Responsable: ${item.responsible || 'Sin asignar'}${item.dueDate ? ` · Fecha: ${formatDateHuman_(item.dueDate)}` : ''}`,
       itemId: item.id,
-      priority: item.priority
+      priority: item.priority,
+      originDeviceId: data.originDeviceId
     });
 
     SpreadsheetApp.flush();
@@ -149,7 +170,7 @@ function saveItem(payload, accessToken) {
   }
 }
 
-function setItemStatus(itemId, status, actor, accessToken) {
+function setItemStatus(itemId, status, actor, originDeviceId, accessToken) {
   assertPwaAccess_(accessToken);
   ensureSetup_();
   const safeId = cleanText_(itemId, 80);
@@ -177,16 +198,22 @@ function setItemStatus(itemId, status, actor, accessToken) {
 
     const verb = safeStatus === 'Completado' ? 'Completó' : safeStatus === 'Cancelado' ? 'Canceló' : 'Reabrió';
     addActivity_(safeId, verb, `${verb} ${item.title}`, safeActor);
+    const nextItem = safeStatus === 'Completado' ? createNextRecurringItem_(item) : null;
     sendNotification_({
       actor: safeActor,
       subject: `${safeActor} ${verb.toLowerCase()}: ${item.title}`,
       title: item.title,
       message: `Nuevo estado: ${safeStatus}`,
       itemId: item.id,
-      priority: item.priority
+      priority: item.priority,
+      originDeviceId: cleanText_(originDeviceId, 120)
     });
     SpreadsheetApp.flush();
-    return { ok: true, item: publicItem_(itemFromRow_(row)) };
+    return {
+      ok: true,
+      item: publicItem_(itemFromRow_(row)),
+      nextItem: nextItem ? publicItem_(nextItem) : null
+    };
   } finally {
     lock.releaseLock();
   }
@@ -247,8 +274,7 @@ function saveSettings(payload, accessToken) {
     PERSONA_1_EMAIL: cleanEmail_(payload && payload.person1Email),
     PERSONA_2_NOMBRE: cleanText_(payload && payload.person2Name, 80) || 'Laura',
     PERSONA_2_EMAIL: cleanEmail_(payload && payload.person2Email),
-    ENVIAR_CORREOS: payload && payload.sendEmails ? 'SI' : 'NO',
-    INTERVALO_REFRESCO: String(Math.max(15, Math.min(300, Number(payload && payload.refreshSeconds) || 30)))
+    ENVIAR_CORREOS: payload && payload.sendEmails ? 'SI' : 'NO'
   };
 
   const sheet = getSheet_(APP.SHEETS.SETTINGS);
@@ -265,6 +291,78 @@ function saveSettings(payload, accessToken) {
   addActivity_('', 'Configuró', 'Actualizó la configuración del hogar', cleanText_(payload && payload.actor, 80) || 'Alguien');
   SpreadsheetApp.flush();
   return { ok: true, settings: getSettings_() };
+}
+
+function saveCatalogEntry(payload, accessToken) {
+  assertPwaAccess_(accessToken);
+  ensureSetup_();
+  const data = normalizeCatalogPayload_(payload);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+
+  try {
+    const sheet = getSheet_(APP.SHEETS.CATALOG);
+    let rowNumber = 0;
+    let current = null;
+    if (data.id) {
+      rowNumber = findCatalogRow_(data.id);
+      if (!rowNumber) throw new Error('No encontramos el producto del catálogo.');
+      current = catalogFromRow_(sheet.getRange(rowNumber, 1, 1, APP.CATALOG_HEADERS.length).getValues()[0]);
+    }
+
+    const entry = {
+      id: data.id || createId_('CAT'),
+      alias: data.alias,
+      category: data.category,
+      location: data.location,
+      name: data.name,
+      brand: data.brand,
+      model: data.model,
+      specification: data.specification,
+      presentation: data.presentation,
+      imageUrl: data.imageUrl,
+      purchaseUrl: data.purchaseUrl,
+      active: current ? current.active : true,
+      updatedAt: new Date()
+    };
+    const row = catalogToRow_(entry);
+    if (rowNumber) sheet.getRange(rowNumber, 1, 1, row.length).setValues([row]);
+    else sheet.appendRow(row);
+
+    const actor = cleanText_(payload && payload.actor, 80) || 'Alguien';
+    addActivity_('', rowNumber ? 'Editó catálogo' : 'Agregó al catálogo', `${rowNumber ? 'Actualizó' : 'Agregó'} ${entry.alias} en el catálogo`, actor);
+    SpreadsheetApp.flush();
+    return { ok: true, entry: publicCatalogEntry_(catalogFromRow_(row)) };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function setCatalogEntryActive(catalogId, active, actor, accessToken) {
+  assertPwaAccess_(accessToken);
+  ensureSetup_();
+  const safeId = cleanText_(catalogId, 80);
+  if (!safeId) throw new Error('Falta identificar el producto del catálogo.');
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+
+  try {
+    const sheet = getSheet_(APP.SHEETS.CATALOG);
+    const rowNumber = findCatalogRow_(safeId);
+    if (!rowNumber) throw new Error('El producto ya no existe en el catálogo.');
+    const entry = catalogFromRow_(sheet.getRange(rowNumber, 1, 1, APP.CATALOG_HEADERS.length).getValues()[0]);
+    entry.active = Boolean(active);
+    entry.updatedAt = new Date();
+    entry.updatedAtRaw = entry.updatedAt;
+    const row = catalogToRow_(entry);
+    sheet.getRange(rowNumber, 1, 1, row.length).setValues([row]);
+    const safeActor = cleanText_(actor, 80) || 'Alguien';
+    addActivity_('', entry.active ? 'Activó catálogo' : 'Desactivó catálogo', `${entry.active ? 'Activó' : 'Desactivó'} ${entry.alias} en el catálogo`, safeActor);
+    SpreadsheetApp.flush();
+    return { ok: true, entry: publicCatalogEntry_(catalogFromRow_(row)) };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /**
@@ -296,17 +394,17 @@ function ensureSetup_() {
   const spreadsheet = getSpreadsheet_();
   ensureSheet_(spreadsheet, APP.SHEETS.ITEMS, APP.ITEM_HEADERS);
   ensureSheet_(spreadsheet, APP.SHEETS.ACTIVITY, APP.ACTIVITY_HEADERS);
+  ensureSheet_(spreadsheet, APP.SHEETS.CATALOG, APP.CATALOG_HEADERS);
   const settingsSheet = ensureSheet_(spreadsheet, APP.SHEETS.SETTINGS, APP.SETTINGS_HEADERS);
 
   if (settingsSheet.getLastRow() === 1) {
-    settingsSheet.getRange(2, 1, 7, 2).setValues([
+    settingsSheet.getRange(2, 1, 6, 2).setValues([
       ['CASA_NOMBRE', APP.NAME],
       ['PERSONA_1_NOMBRE', 'Axel'],
       ['PERSONA_1_EMAIL', ''],
       ['PERSONA_2_NOMBRE', 'Laura'],
       ['PERSONA_2_EMAIL', ''],
-      ['ENVIAR_CORREOS', 'NO'],
-      ['INTERVALO_REFRESCO', '30']
+      ['ENVIAR_CORREOS', 'NO']
     ]);
   }
   return spreadsheet;
@@ -378,6 +476,19 @@ function getActivity_(limit) {
     .reverse();
 }
 
+function getCatalog_() {
+  const sheet = getSheet_(APP.SHEETS.CATALOG);
+  if (sheet.getLastRow() < 2) return [];
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, APP.CATALOG_HEADERS.length)
+    .getValues()
+    .filter(row => row[0])
+    .map(row => publicCatalogEntry_(catalogFromRow_(row)))
+    .sort((a, b) => {
+      if (a.active !== b.active) return a.active ? -1 : 1;
+      return String(a.alias).localeCompare(String(b.alias), 'es', { sensitivity: 'base' });
+    });
+}
+
 function getSettings_() {
   const sheet = getSheet_(APP.SHEETS.SETTINGS);
   const rows = sheet.getLastRow() > 1
@@ -391,8 +502,7 @@ function getSettings_() {
     person1Email: settings.PERSONA_1_EMAIL || '',
     person2Name: settings.PERSONA_2_NOMBRE || 'Laura',
     person2Email: settings.PERSONA_2_EMAIL || '',
-    sendEmails: settings.ENVIAR_CORREOS === 'SI',
-    refreshSeconds: Math.max(15, Number(settings.INTERVALO_REFRESCO) || 30)
+    sendEmails: settings.ENVIAR_CORREOS === 'SI'
   };
 }
 
@@ -410,6 +520,19 @@ function normalizeItemPayload_(payload) {
   const quantityRaw = payload && payload.quantity;
   const quantity = quantityRaw === '' || quantityRaw == null ? '' : Math.max(0, Number(quantityRaw) || 0);
   const dueDate = cleanDate_(payload && payload.dueDate);
+  const serviceMode = type === 'Servicio'
+    ? cleanText_(payload && payload.serviceMode, 30) || 'Único'
+    : '';
+  if (serviceMode && !APP.SERVICE_MODES.includes(serviceMode)) throw new Error('La modalidad del servicio no es válida.');
+  const isRecurring = type === 'Servicio' && serviceMode === 'Recurrente';
+  const recurrence = isRecurring ? cleanText_(payload && payload.recurrence, 30) : '';
+  if (isRecurring && !APP.RECURRENCES.includes(recurrence)) throw new Error('Elige cada cuánto se repite el servicio.');
+  if (isRecurring && !dueDate) throw new Error('Indica la primera fecha de vencimiento del servicio recurrente.');
+  const recurrenceDaysRaw = Number(payload && payload.recurrenceDays);
+  const recurrenceDays = recurrence === 'Personalizada'
+    ? Math.max(1, Math.min(730, Math.round(recurrenceDaysRaw || 0)))
+    : '';
+  if (recurrence === 'Personalizada' && !recurrenceDaysRaw) throw new Error('Indica cada cuántos días se repite el servicio.');
 
   return {
     id: cleanText_(payload && payload.id, 80),
@@ -422,7 +545,34 @@ function normalizeItemPayload_(payload) {
     priority,
     responsible: cleanText_(payload && payload.responsible, 80),
     actor: cleanText_(payload && payload.actor, 80) || 'Alguien',
-    portalUrl
+    portalUrl,
+    catalogId: cleanText_(payload && payload.catalogId, 80),
+    serviceMode,
+    isRecurring,
+    recurrence,
+    recurrenceDays,
+    repeatAmount: Boolean(payload && payload.repeatAmount),
+    originDeviceId: cleanText_(payload && payload.originDeviceId, 120)
+  };
+}
+
+function normalizeCatalogPayload_(payload) {
+  const alias = cleanText_(payload && payload.alias, 120);
+  const category = cleanText_(payload && payload.category, 30);
+  if (!alias) throw new Error('Escribe el nombre rápido del producto.');
+  if (!APP.TYPES.includes(category)) throw new Error('Elige una categoría válida para el catálogo.');
+  return {
+    id: cleanText_(payload && payload.id, 80),
+    alias,
+    category,
+    location: cleanText_(payload && payload.location, 100),
+    name: cleanText_(payload && payload.name, 120),
+    brand: cleanText_(payload && payload.brand, 100),
+    model: cleanText_(payload && payload.model, 100),
+    specification: cleanText_(payload && payload.specification, 500),
+    presentation: cleanText_(payload && payload.presentation, 120),
+    imageUrl: cleanUrl_(payload && payload.imageUrl),
+    purchaseUrl: cleanUrl_(payload && payload.purchaseUrl)
   };
 }
 
@@ -432,7 +582,10 @@ function itemToRow_(item) {
     item.dueDate, item.priority, item.responsible, item.createdBy,
     item.status, item.portalUrl, item.receiptUrl, item.receiptName,
     item.createdAtRaw || item.createdAt, item.updatedAtRaw || item.updatedAt,
-    item.completedBy, item.completedAtRaw || item.completedAt
+    item.completedBy, item.completedAtRaw || item.completedAt,
+    item.catalogId || '', item.serviceMode || '', item.recurrence || '',
+    item.recurrenceDays === '' ? '' : Number(item.recurrenceDays || 0),
+    item.repeatAmount ? 'SI' : 'NO', item.seriesId || '', item.previousItemId || ''
   ];
 }
 
@@ -456,6 +609,13 @@ function itemFromRow_(row) {
     updatedAt: toIso_(row[15]),
     completedBy: String(row[16] || ''),
     completedAt: toIso_(row[17]),
+    catalogId: String(row[18] || ''),
+    serviceMode: String(row[19] || (String(row[1] || '') === 'Servicio' ? 'Único' : '')),
+    recurrence: String(row[20] || ''),
+    recurrenceDays: row[21] === '' ? '' : Number(row[21]),
+    repeatAmount: String(row[22] || '').toUpperCase() === 'SI',
+    seriesId: String(row[23] || ''),
+    previousItemId: String(row[24] || ''),
     createdAtRaw: row[14] || '',
     updatedAtRaw: row[15] || '',
     completedAtRaw: row[17] || ''
@@ -470,6 +630,40 @@ function publicItem_(item) {
   return copy;
 }
 
+function catalogToRow_(entry) {
+  return [
+    entry.id, entry.alias, entry.category, entry.location, entry.name,
+    entry.brand, entry.model, entry.specification, entry.presentation,
+    entry.imageUrl, entry.purchaseUrl, entry.active ? 'SI' : 'NO',
+    entry.updatedAtRaw || entry.updatedAt
+  ];
+}
+
+function catalogFromRow_(row) {
+  return {
+    id: String(row[0] || ''),
+    alias: String(row[1] || ''),
+    category: String(row[2] || ''),
+    location: String(row[3] || ''),
+    name: String(row[4] || ''),
+    brand: String(row[5] || ''),
+    model: String(row[6] || ''),
+    specification: String(row[7] || ''),
+    presentation: String(row[8] || ''),
+    imageUrl: String(row[9] || ''),
+    purchaseUrl: String(row[10] || ''),
+    active: String(row[11] || 'SI').toUpperCase() !== 'NO',
+    updatedAt: toIso_(row[12]),
+    updatedAtRaw: row[12] || ''
+  };
+}
+
+function publicCatalogEntry_(entry) {
+  const copy = Object.assign({}, entry);
+  delete copy.updatedAtRaw;
+  return copy;
+}
+
 function findItemRow_(itemId) {
   const sheet = getSheet_(APP.SHEETS.ITEMS);
   if (sheet.getLastRow() < 2) return 0;
@@ -480,10 +674,86 @@ function findItemRow_(itemId) {
   return finder ? finder.getRow() : 0;
 }
 
+function findCatalogRow_(catalogId) {
+  const sheet = getSheet_(APP.SHEETS.CATALOG);
+  if (sheet.getLastRow() < 2) return 0;
+  const finder = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1)
+    .createTextFinder(catalogId)
+    .matchEntireCell(true)
+    .findNext();
+  return finder ? finder.getRow() : 0;
+}
+
 function addActivity_(itemId, action, description, actor) {
   getSheet_(APP.SHEETS.ACTIVITY).appendRow([
     createId_('ACT'), itemId || '', action, description, actor, new Date()
   ]);
+}
+
+function createNextRecurringItem_(item) {
+  if (item.type !== 'Servicio' || item.serviceMode !== 'Recurrente' || !item.seriesId || !item.recurrence) return null;
+  const sheet = getSheet_(APP.SHEETS.ITEMS);
+  if (sheet.getLastRow() > 1) {
+    const previousIds = sheet.getRange(2, 25, sheet.getLastRow() - 1, 1).getDisplayValues();
+    const existingIndex = previousIds.findIndex(row => String(row[0]) === item.id);
+    if (existingIndex >= 0) {
+      return itemFromRow_(sheet.getRange(existingIndex + 2, 1, 1, APP.ITEM_HEADERS.length).getValues()[0]);
+    }
+  }
+
+  const now = new Date();
+  const next = {
+    id: createId_('HOG'),
+    type: 'Servicio',
+    title: item.title,
+    detail: item.detail,
+    quantity: item.quantity,
+    amount: item.repeatAmount ? item.amount : '',
+    dueDate: nextRecurrenceDate_(item.dueDate, item.recurrence, item.recurrenceDays),
+    priority: item.priority,
+    responsible: item.responsible,
+    createdBy: 'Casa en Orden',
+    status: 'Pendiente',
+    portalUrl: item.portalUrl,
+    receiptUrl: '',
+    receiptName: '',
+    createdAt: now,
+    updatedAt: now,
+    completedBy: '',
+    completedAt: '',
+    catalogId: item.catalogId,
+    serviceMode: 'Recurrente',
+    recurrence: item.recurrence,
+    recurrenceDays: item.recurrenceDays,
+    repeatAmount: item.repeatAmount,
+    seriesId: item.seriesId,
+    previousItemId: item.id
+  };
+  const row = itemToRow_(next);
+  sheet.appendRow(row);
+  addActivity_(next.id, 'Programó', `Programó el siguiente pago de ${next.title}`, 'Casa en Orden');
+  return itemFromRow_(row);
+}
+
+function nextRecurrenceDate_(dateString, recurrence, customDays) {
+  const safeDate = cleanDate_(dateString) || Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  const parts = safeDate.split('-').map(Number);
+  const base = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
+  const dayMap = { Semanal: 7, Quincenal: 15 };
+  const monthMap = { Mensual: 1, Bimestral: 2, Trimestral: 3, Semestral: 6, Anual: 12 };
+
+  if (dayMap[recurrence] || recurrence === 'Personalizada') {
+    base.setDate(base.getDate() + (dayMap[recurrence] || Math.max(1, Number(customDays) || 1)));
+  } else {
+    const months = monthMap[recurrence] || 1;
+    const baseLastDay = new Date(base.getFullYear(), base.getMonth() + 1, 0, 12, 0, 0).getDate();
+    const wasLastDay = base.getDate() === baseLastDay;
+    const target = new Date(base.getFullYear(), base.getMonth() + months, 1, 12, 0, 0);
+    const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0, 12, 0, 0).getDate();
+    target.setDate(wasLastDay ? lastDay : Math.min(base.getDate(), lastDay));
+    base.setTime(target.getTime());
+  }
+  return Utilities.formatDate(base, Session.getScriptTimeZone(), 'yyyy-MM-dd');
 }
 
 function sendNotification_(message) {
@@ -518,10 +788,12 @@ function sendPushNotification_(message) {
       headers: { Authorization: `Bearer ${secret}` },
       payload: JSON.stringify({
         actor: cleanText_(message.actor, 80) || 'Alguien',
+        actorRole: actorRole_(message.actor),
         title: cleanText_(message.subject, 100) || APP.NAME,
         body: cleanText_(message.message, 280) || cleanText_(message.title, 120),
         itemId: cleanText_(message.itemId, 80),
-        priority: cleanText_(message.priority, 20)
+        priority: cleanText_(message.priority, 20),
+        originDeviceId: cleanText_(message.originDeviceId, 120)
       }),
       muteHttpExceptions: true
     });
@@ -703,12 +975,22 @@ function sampleItem_(type, title, detail, quantity, amount, dueDate, priority, r
     id: createId_('HOG'), type, title, detail, quantity, amount, dueDate,
     priority, responsible, createdBy, status: 'Pendiente', portalUrl,
     receiptUrl: '', receiptName: '', createdAt: now, updatedAt: now,
-    completedBy: '', completedAt: ''
+    completedBy: '', completedAt: '', catalogId: '',
+    serviceMode: type === 'Servicio' ? 'Único' : '', recurrence: '',
+    recurrenceDays: '', repeatAmount: false, seriesId: '', previousItemId: ''
   };
 }
 
 function createId_(prefix) {
   return `${prefix}-${Utilities.getUuid().split('-')[0].toUpperCase()}`;
+}
+
+function actorRole_(actor) {
+  const settings = getSettings_();
+  const normalized = cleanText_(actor, 80).toLowerCase();
+  if (normalized && normalized === String(settings.person2Name || '').toLowerCase()) return 'person2';
+  if (normalized && normalized === String(settings.person1Name || '').toLowerCase()) return 'person1';
+  return '';
 }
 
 function cleanText_(value, maxLength) {

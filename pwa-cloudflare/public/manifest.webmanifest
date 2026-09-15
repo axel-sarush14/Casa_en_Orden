@@ -34,6 +34,12 @@
   ],
   "shortcuts": [
     {
+      "name": "Agregar pendiente",
+      "short_name": "Agregar",
+      "url": "/?modo=nfc",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
       "name": "Abrir pendientes",
       "short_name": "Pendientes",
       "url": "/?view=pending",

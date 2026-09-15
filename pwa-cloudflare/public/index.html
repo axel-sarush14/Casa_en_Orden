@@ -53,7 +53,7 @@
           </label>
 
           <fieldset class="people-fieldset">
-            <legend>¿Quién usa este teléfono?</legend>
+            <legend>¿De quién es este teléfono?</legend>
             <div id="peopleOptions" class="people-options"></div>
           </fieldset>
 
@@ -96,6 +96,31 @@
           <button id="installButton" class="secondary-button" type="button" hidden>Instalar en este teléfono</button>
           <button id="openButton" class="primary-button" type="button">Abrir Casa en Orden</button>
         </section>
+      </article>
+    </section>
+
+    <section id="quickView" class="quick-view" hidden>
+      <div class="setup-backdrop setup-backdrop-one"></div>
+      <div class="setup-backdrop setup-backdrop-two"></div>
+      <article class="quick-card">
+        <header class="brand-row quick-brand-row">
+          <img src="/icons/icon.svg" width="62" height="62" alt="">
+          <div><p class="eyebrow">Acceso rápido NFC</p><h1>Casa en Orden</h1></div>
+        </header>
+        <div id="quickAvatar" class="quick-avatar">A</div>
+        <p class="eyebrow">Teléfono identificado</p>
+        <h2 id="quickGreeting">Hola, Axel</h2>
+        <p id="quickDescription" class="quick-description">¿Qué quieres hacer?</p>
+        <div class="quick-actions">
+          <button id="quickAddButton" class="primary-button quick-primary" type="button"><span aria-hidden="true">＋</span> Agregar pendiente</button>
+          <button id="quickOpenButton" class="secondary-button" type="button">Ver la aplicación</button>
+        </div>
+        <button id="quickChangeActor" class="text-button" type="button">No soy Axel</button>
+        <div id="quickActorChooser" class="quick-actor-chooser" hidden>
+          <strong>¿Quién registrará este pendiente?</strong>
+          <div id="quickPeopleOptions" class="people-options"></div>
+          <small>Este cambio será temporal; el teléfono seguirá registrado con su dueño.</small>
+        </div>
       </article>
     </section>
 

@@ -15,6 +15,11 @@ export function normalizeActor(value) {
   return actor;
 }
 
+export function normalizeOwnerRole(value) {
+  const role = String(value || '').trim();
+  return role === 'person2' ? 'person2' : 'person1';
+}
+
 export function normalizePin(value) {
   const pin = String(value || '').trim();
   if (pin.length < 6 || pin.length > 64) {
@@ -80,7 +85,9 @@ export function cleanNotification(value) {
   const actor = cleanText(source.actor, 80) || 'Alguien';
   const itemId = cleanText(source.itemId, 80);
   const priority = cleanText(source.priority, 20);
-  return { title, body, actor, itemId, priority };
+  const originDeviceId = cleanText(source.originDeviceId, 120);
+  const actorRole = ['person1', 'person2'].includes(source.actorRole) ? source.actorRole : '';
+  return { title, body, actor, actorRole, itemId, priority, originDeviceId };
 }
 
 export function cleanText(value, limit = 200) {

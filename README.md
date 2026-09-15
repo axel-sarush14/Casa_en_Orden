@@ -1,128 +1,191 @@
-# Casa en Orden 3.0 — PWA con notificaciones, sin Firebase
+# Casa en Orden 4.0 — identidad por teléfono, NFC y catálogo
 
-Esta versión parte del respaldo `Respaldo_AppsScript_Casa_en_Orden_20260821_000533.zip` y conserva la app, la Hoja de cálculo y los comprobantes en Google Drive. GitHub y Cloudflare solo publican la versión instalable y entregan las notificaciones Web Push.
+Esta versión parte del respaldo `Respaldo_AppsScript_Casa_en_Orden_20260911_000535.zip`. Conserva los pendientes existentes, la Hoja de cálculo y los comprobantes de Drive; la migración únicamente agrega columnas y crea la hoja `Catalogo`.
 
-No tienes que crear un proyecto de Firebase, generar llaves VAPID, configurar una cuenta de servicio ni copiar secretos entre plataformas. La primera pantalla hace esa configuración automáticamente.
+GitHub y Cloudflare publican la PWA y entregan Web Push directo. No usa Firebase ni requiere crear llaves manualmente.
 
-## Qué contiene
+## Novedades
 
-| Carpeta | Para qué sirve |
+- Cada teléfono queda identificado de forma permanente como **Axel** o **Lau/Laura**.
+- Al abrir normalmente, la app entra con el perfil propio del teléfono.
+- El cambio de persona dentro de la app es temporal y no modifica al dueño del dispositivo.
+- Un tag NFC puede abrir el acceso rápido con **Agregar pendiente** o **Ver la aplicación**, usando automáticamente la identidad del teléfono.
+- Los avisos se envían únicamente a los dispositivos de la otra persona y nunca al dispositivo que hizo el cambio.
+- Ya no consulta los datos cada dos minutos: actualiza al guardar, recibir un push, abrir o regresar a la app, y al tocar el botón de actualización.
+- Los servicios pueden ser de pago **Único** o **Recurrente**.
+- Al marcar como pagado un servicio recurrente, se genera una sola vez el siguiente vencimiento.
+- El catálogo doméstico guarda marcas, modelos, medidas, tipo de luz, presentación, enlaces e imágenes para autocompletar futuros pendientes.
+
+## Contenido del paquete
+
+| Carpeta | Uso |
 |---|---|
-| `apps-script/` | La versión actualizada del proyecto de Google Apps Script. |
-| `pwa-cloudflare/` | El proyecto que se sube a GitHub y se publica en Cloudflare. |
+| `apps-script/` | Código actualizado de Google Apps Script. |
+| `pwa-cloudflare/` | PWA y Worker que se publican desde GitHub en Cloudflare. |
 
-## Instalación rápida
+## Actualizar una instalación 3.0 existente
 
 ### 1. Actualiza Apps Script
 
 1. Abre la Hoja de cálculo de Casa en Orden.
 2. Entra a **Extensiones → Apps Script**.
-3. Reemplaza el contenido de tus archivos por los cinco archivos de `apps-script/`:
+3. Sustituye el contenido de los cinco archivos con los de `apps-script/`:
    - `Code.gs`
    - `Index.html`
    - `Scripts.html`
    - `Styles.html`
    - `appsscript.json`
 4. Guarda el proyecto.
-5. En el selector de funciones, ejecuta una vez `setupCasaEnOrden_` y acepta los permisos de Google.
-6. Ve a **Implementar → Administrar implementaciones**, edita tu Web App y elige **Nueva versión**.
-7. Confirma estas opciones:
+5. Regresa a la Hoja y recárgala.
+6. Usa **Casa en Orden → Configurar hojas**. Esto conserva las primeras 18 columnas y sus datos, agrega las columnas nuevas al final y crea `Catalogo`.
+7. Ve a **Implementar → Administrar implementaciones**, edita la Web App, selecciona **Nueva versión** y pulsa **Implementar**.
+8. Conserva la misma URL que termina en `/exec`.
+
+### 2. Actualiza GitHub y Cloudflare
+
+1. En tu repositorio existente, reemplaza el contenido con esta versión, respetando las carpetas.
+2. Confirma los cambios en la misma rama que Cloudflare despliega.
+3. Espera a que termine la publicación de Cloudflare.
+
+No cambies el nombre del Worker, el binding `HOME_REGISTRY`, el `manifest.id` ni `HOME_OBJECT_NAME`. Se conservarán el PIN, los teléfonos vinculados, las llaves Web Push y la app ya instalada.
+
+### 3. Confirma el dueño de cada teléfono
+
+- En el teléfono de Axel, abre la app y entra a **Perfil → Este teléfono es de…**. Selecciona Axel si fuera necesario.
+- En el teléfono de Lau, repite el proceso y selecciona Lau/Laura.
+- Esa selección queda guardada por dispositivo. No tendrán que elegir usuario cada vez que entren.
+- Si alguien usa por un momento el teléfono de la otra persona, puede tocar el nombre de la barra superior. Ese cambio solo afecta el registro que haga en ese momento; al volver a abrir, se recupera el dueño fijo.
+
+## Instalación nueva
+
+### 1. Apps Script
+
+1. Vincula el proyecto a una Hoja de cálculo.
+2. Copia los cinco archivos de `apps-script/`.
+3. Guarda, recarga la Hoja y usa **Casa en Orden → Configurar hojas**.
+4. Implementa como Web App con:
    - **Ejecutar como:** Yo.
    - **Quién tiene acceso:** Cualquier usuario.
-8. Implementa y copia la URL que termina en `/exec`.
+5. Copia la URL `/exec`.
 
-> Usa la implementación `/exec`, no la URL del editor ni la implementación de prueba `/dev`.
+### 2. GitHub y Cloudflare
 
-### 2. Sube la parte de Cloudflare a GitHub
-
-Puedes hacerlo igual que con el proyecto de la boda:
-
-1. Crea un repositorio privado nuevo en GitHub.
-2. Sube **el contenido completo de este paquete**, respetando las carpetas.
-3. En Cloudflare entra a **Workers & Pages → Create → Import a repository**.
-4. Selecciona el repositorio y usa:
+1. Sube el paquete a un repositorio privado de GitHub.
+2. En Cloudflare abre **Workers & Pages → Create → Import a repository**.
+3. Configura:
    - **Root directory:** `pwa-cloudflare`
-   - **Build command:** déjalo vacío.
+   - **Build command:** vacío
    - **Deploy command:** `npx wrangler deploy`
-5. Pulsa **Deploy**.
+4. Publica el proyecto.
 
-Cloudflare creará automáticamente el almacenamiento seguro del hogar durante esa primera publicación. No necesitas crear KV, variables ni secretos.
+Cloudflare crea el almacenamiento y las llaves Web Push automáticamente. No necesitas KV, Firebase, variables ni secretos manuales.
 
-### 3. Vincula el primer teléfono
+### 3. Primer teléfono
 
-1. Abre la dirección `*.workers.dev` que te entregue Cloudflare.
+1. Abre la URL `*.workers.dev`.
 2. Pega la URL `/exec` de Apps Script.
-3. Elige **Axel** o **Laura**.
-4. Crea un PIN de al menos 6 caracteres y guárdalo; será el PIN compartido del hogar.
-5. Toca **Crear hogar y activar**.
-6. Cuando el teléfono pregunte, elige **Permitir notificaciones**.
-7. Debes recibir una notificación de prueba.
-8. Toca **Instalar** o usa **menú ⋮ → Agregar a pantalla de inicio**.
+3. Elige de quién es el teléfono.
+4. Crea un PIN compartido de al menos 6 caracteres.
+5. Permite las notificaciones.
+6. Instala la app desde el botón mostrado o desde **menú ⋮ → Agregar a pantalla de inicio**.
 
-En ese proceso se generan las llaves Web Push, se protege la Web App y Apps Script se enlaza con Cloudflare sin copiar ninguna clave a mano.
-
-### 4. Vincula el segundo teléfono
+### 4. Segundo teléfono
 
 1. Abre la misma URL de Cloudflare.
-2. Elige a la otra persona.
-3. Escribe el mismo PIN.
+2. Elige al dueño de ese teléfono.
+3. Introduce el mismo PIN.
 4. Permite las notificaciones e instala la app.
 
-## Prueba final
+## Configurar el tag NFC
 
-1. En el teléfono de Laura agrega, por ejemplo, **Leche** a Despensa.
-2. El teléfono de Axel debe recibir el aviso aun con la app cerrada.
-3. Márcalo como comprado desde Axel; Laura debe recibir el cambio.
+Graba en el tag un registro de tipo **URL/Enlace** con esta dirección:
 
-La app no envía el aviso al teléfono que realizó la acción. Por eso es importante que un teléfono esté identificado como Axel y el otro como Laura.
+```text
+https://TU-WORKER.workers.dev/?modo=nfc
+```
 
-## Cómo se actualiza después
+Sustituye `TU-WORKER` por tu dirección real. Usa exactamente el mismo dominio con el que instalaste la PWA.
 
-- Un cambio enviado a la rama principal de GitHub vuelve a publicar automáticamente la PWA en Cloudflare.
-- Un cambio dentro de `apps-script/` requiere crear una **nueva versión** de la misma implementación en Apps Script.
-- Conserva la misma URL `/exec` y el mismo Worker para no tener que volver a vincular los teléfonos.
+Al acercar cualquiera de los dos teléfonos:
 
-## Si algo no funciona
+1. La PWA reconoce al dueño registrado en ese dispositivo.
+2. Muestra **Hola, Axel** o **Hola, Lau**.
+3. Permite elegir **Agregar pendiente** o **Ver la aplicación**.
+4. Si quien acerca el teléfono no es su dueño, puede cambiar de persona solo para esa entrada.
 
-### La pantalla dice que no puede enlazar Apps Script
+Si Android pregunta con qué abrir el enlace, elige Casa en Orden o el mismo navegador con el que instalaste la PWA. Un teléfono nuevo deberá vincularse con el PIN antes de usar el acceso rápido.
 
-- Confirma que pegaste una URL que termina en `/exec`.
-- Revisa que implementaste la versión nueva.
-- Confirma que la Web App está ejecutándose como tú y con acceso para cualquier usuario.
+## Servicios únicos y recurrentes
 
-### No llega la notificación
+Al crear un pendiente de tipo **Servicio**:
 
-- En Android abre **Ajustes → Aplicaciones → Chrome o Samsung Internet → Notificaciones** y verifica que estén permitidas.
-- Revisa también el permiso del sitio dentro del navegador.
+- **Único:** se registra una sola fecha o pago.
+- **Recurrente:** selecciona semanal, quincenal, mensual, bimestral, trimestral, semestral, anual o una cantidad personalizada de días.
+- **Repetir el mismo monto:** actívalo solo si normalmente no cambia.
+
+Cuando un recurrente se marca como pagado, el pago actual conserva su comprobante e historial y la app crea el siguiente pendiente. La protección por `AnteriorID` impide generar el mismo siguiente pago dos veces.
+
+## Catálogo doméstico
+
+1. Entra a **Perfil → Catálogo doméstico → Agregar**.
+2. Guarda un nombre rápido, por ejemplo `Foco del cuarto`.
+3. Añade lo que convenga: ubicación, marca, modelo, base, watts, temperatura de color, presentación, enlace o imagen.
+4. Al crear un pendiente, busca ese nombre en **Buscar en el catálogo**.
+5. La app completa el título, detalle técnico y enlace de compra; todavía puedes ajustarlos para ese pendiente.
+
+Los productos pueden desactivarse sin borrarlos. Los pendientes anteriores conservan la información que tenían al momento de crearse.
+
+## Cómo se actualiza la información
+
+- El teléfono que guarda un cambio actualiza su pantalla inmediatamente.
+- El teléfono de la otra persona recibe el push y, si la app está abierta, recarga los datos por ese evento.
+- Al abrir o volver a la app también se sincroniza.
+- El botón circular de actualización fuerza una consulta manual.
+- No existe un temporizador de dos minutos.
+
+Si un teléfono tiene los avisos bloqueados, no puede recibir el evento mientras la app está cerrada; recuperará los cambios al abrirla o volver a ella.
+
+## Prueba recomendada
+
+1. Desde el teléfono de Lau agrega `Leche`.
+2. Solo los dispositivos registrados como Axel deben recibir el aviso.
+3. Desde Axel márcalo como comprado.
+4. Solo los dispositivos de Lau deben recibir el cambio.
+5. Acerca ambos teléfonos al mismo tag NFC y verifica que cada uno muestre su propio saludo.
+6. Crea un servicio recurrente de prueba, márcalo pagado y confirma que aparezca exactamente un siguiente vencimiento.
+
+## Solución de problemas
+
+### Un teléfono abre con el perfil equivocado
+
+Entra a **Perfil → Este teléfono es de…**, selecciona a la persona correcta y vuelve a abrir la app. Es un ajuste local de ese dispositivo.
+
+### No llega una notificación
+
+- Verifica el permiso en **Ajustes → Aplicaciones → Chrome o Samsung Internet → Notificaciones**.
+- Revisa el permiso del sitio dentro del navegador.
 - No uses modo incógnito.
-- Comprueba que los dos teléfonos estén vinculados con personas distintas.
+- Confirma que cada teléfono tenga un dueño diferente.
+- Prueba agregar desde un teléfono y observa el otro; la app excluye deliberadamente al dispositivo de origen.
 
-### Apps Script dice que ya está enlazado con otra PWA
+### Apps Script dice que ya está enlazado
 
-En la Hoja de cálculo usa el menú **Casa en Orden → Restablecer enlace de notificaciones**. Después vuelve a abrir la URL correcta de Cloudflare. Esto no elimina pendientes ni comprobantes.
+Usa **Casa en Orden → Restablecer enlace de notificaciones** en la Hoja y vuelve a abrir la PWA correcta. Esto no elimina pendientes, catálogo ni comprobantes.
 
 ### Olvidé el PIN
 
-El PIN no se puede leer porque se guarda como un hash. Para empezar de nuevo:
+El PIN se almacena como hash y no puede recuperarse. Para reiniciar el hogar, cambia `HOME_OBJECT_NAME` en `pwa-cloudflare/src/worker.js` por un nombre nuevo y único, publica, restablece el enlace desde la Hoja y vuelve a vincular ambos teléfonos.
 
-1. En `pwa-cloudflare/src/worker.js`, cambia `casa-en-orden-v3` por `casa-en-orden-v4`.
-2. Sube el cambio a GitHub y espera la nueva publicación.
-3. En la Hoja usa **Casa en Orden → Restablecer enlace de notificaciones**.
-4. Vuelve a vincular ambos teléfonos y crea un PIN nuevo.
+## Privacidad
 
-## Privacidad y seguridad
-
-- El PIN se guarda como hash, no como texto legible.
-- La URL de Apps Script solo se entrega a teléfonos que demostraron conocer el PIN.
-- Todas las lecturas y cambios de Apps Script requieren un token creado automáticamente para el hogar.
-- El secreto que permite enviar notificaciones se guarda en propiedades privadas de Apps Script.
-- La Web App se publica con acceso amplio porque se muestra dentro de la PWA, pero abrir directamente su URL no permite leer ni cambiar tus datos.
-- Los pendientes continúan en tu Hoja de cálculo y los comprobantes en tu Drive.
+- El PIN se guarda como hash.
+- La URL de Apps Script solo se entrega a teléfonos vinculados.
+- Leer o modificar datos requiere el token privado creado para el hogar.
+- El secreto de envío permanece en las propiedades privadas de Apps Script.
+- Los datos siguen en tu Hoja de cálculo y los archivos en tu Drive.
 
 ## Requisitos
 
-- Android con una versión reciente de Chrome o Samsung Internet.
-- Una cuenta gratuita de GitHub.
-- Una cuenta gratuita de Cloudflare Workers.
-- La Hoja y el proyecto de Apps Script existentes.
-
+- Android con Chrome o Samsung Internet reciente.
+- La Hoja y el proyecto de Apps Script.
+- GitHub y Cloudflare Workers.

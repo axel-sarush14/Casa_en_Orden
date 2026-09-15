@@ -1,26 +1,45 @@
 const STORAGE_DEVICE = 'casaEnOrden.pwa.device.v3';
 const STORAGE_INSTALL_DISMISSED = 'casaEnOrden.pwa.installDismissed.v3';
+const LAUNCH_PARAMS = new URLSearchParams(location.search);
 
 const state = {
   config: null,
   registration: null,
   device: readStoredDevice(),
   actor: '',
+  ownerRole: '',
   bridge: null,
   frameReady: false,
   frameChannel: crypto.randomUUID(),
   frameMessenger: null,
   forceActorOnce: false,
+  launchActor: '',
+  launchRole: '',
+  quickActor: '',
+  quickMode: LAUNCH_PARAMS.get('modo') === 'nfc',
+  pendingFrameAction: LAUNCH_PARAMS.get('item') ? 'open-item' : LAUNCH_PARAMS.get('view') === 'pending' ? 'open-pending' : '',
+  pendingItemId: LAUNCH_PARAMS.get('item') || '',
+  pendingDataRefresh: false,
+  pendingRefreshItemId: '',
   installPrompt: null,
   setupMode: 'claim',
   pendingSetup: null,
   bridgeWaiters: [],
-  actorUpdateTimer: null
+  ownerSyncing: false
 };
 
 const els = {
   frame: document.querySelector('#homeApp'),
   setupView: document.querySelector('#setupView'),
+  quickView: document.querySelector('#quickView'),
+  quickAvatar: document.querySelector('#quickAvatar'),
+  quickGreeting: document.querySelector('#quickGreeting'),
+  quickDescription: document.querySelector('#quickDescription'),
+  quickAddButton: document.querySelector('#quickAddButton'),
+  quickOpenButton: document.querySelector('#quickOpenButton'),
+  quickChangeActor: document.querySelector('#quickChangeActor'),
+  quickActorChooser: document.querySelector('#quickActorChooser'),
+  quickPeopleOptions: document.querySelector('#quickPeopleOptions'),
   loadingState: document.querySelector('#loadingState'),
   setupForm: document.querySelector('#setupForm'),
   successState: document.querySelector('#successState'),
@@ -82,6 +101,7 @@ async function init() {
     }
 
     state.actor = state.device.actor || state.config.people[0] || 'Axel';
+    state.ownerRole = state.device.ownerRole || roleForActor(state.actor, state.config.people);
     const restored = await restoreDevice();
     if (!restored) {
       clearStoredDevice();
@@ -94,7 +114,10 @@ async function init() {
       els.continueButton.hidden = false;
       return;
     }
-    openApp();
+    state.forceActorOnce = true;
+    state.launchActor = state.actor;
+    if (state.quickMode) showQuickView();
+    else openApp({ actor: state.actor, action: state.pendingFrameAction, itemId: state.pendingItemId });
   } catch (error) {
     showFatal(errorMessage(error));
   }
@@ -110,8 +133,26 @@ function bindEvents() {
     const button = event.target.closest('[data-person]');
     if (!button) return;
     state.actor = button.dataset.person;
+    state.ownerRole = roleForActor(state.actor, state.config?.people);
     renderPeople(state.config && state.config.people);
   });
+  els.quickPeopleOptions.addEventListener('click', event => {
+    const button = event.target.closest('[data-quick-person]');
+    if (!button) return;
+    state.quickActor = button.dataset.quickPerson;
+    renderQuickIdentity();
+  });
+  els.quickChangeActor.addEventListener('click', () => {
+    if (state.quickActor && state.quickActor !== state.actor) {
+      state.quickActor = state.actor;
+      els.quickActorChooser.hidden = true;
+      renderQuickIdentity();
+      return;
+    }
+    els.quickActorChooser.hidden = !els.quickActorChooser.hidden;
+  });
+  els.quickAddButton.addEventListener('click', () => openApp({ actor: state.quickActor || state.actor, action: 'add' }));
+  els.quickOpenButton.addEventListener('click', () => openApp({ actor: state.quickActor || state.actor }));
   document.querySelector('[data-toggle-pin]').addEventListener('click', togglePinVisibility);
   els.installButton.addEventListener('click', requestInstall);
   els.bannerInstallButton.addEventListener('click', requestInstall);
@@ -119,11 +160,15 @@ function bindEvents() {
     localStorage.setItem(STORAGE_INSTALL_DISMISSED, '1');
     els.installBanner.hidden = true;
   });
-  els.openButton.addEventListener('click', openApp);
+  els.openButton.addEventListener('click', () => {
+    if (state.quickMode) showQuickView();
+    else openApp({ actor: state.actor });
+  });
   els.frame.addEventListener('load', () => {
     setTimeout(configureFrame, 250);
     setTimeout(configureFrame, 1200);
   });
+  if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', handleServiceWorkerMessage);
 }
 
 async function restoreDevice() {
@@ -136,6 +181,7 @@ async function restoreDevice() {
       method: 'POST',
       body: {
         actor: state.actor,
+        ownerRole: state.ownerRole || roleForActor(state.actor, state.config?.people),
         deviceId: state.device.id,
         deviceSecret: state.device.secret,
         subscription
@@ -155,6 +201,7 @@ function showSetup(mode) {
   els.successState.hidden = true;
   els.setupForm.hidden = false;
   els.setupView.hidden = false;
+  els.quickView.hidden = true;
   els.frame.hidden = true;
   els.formError.hidden = true;
   els.continueButton.hidden = mode !== 'repair';
@@ -178,16 +225,16 @@ function showSetup(mode) {
     els.pinHelp.textContent = 'Axel y Laura usarán el mismo PIN al vincular sus teléfonos.';
     els.activateButton.querySelector('span').textContent = 'Crear hogar y activar';
   } else if (isRepair) {
-    els.setupKicker.textContent = 'Avisos del teléfono';
-    els.setupTitle.textContent = 'Activa las notificaciones';
-    els.setupDescription.textContent = 'La app está conectada; solo falta permitir los avisos en este teléfono.';
+    els.setupKicker.textContent = 'Configuración del teléfono';
+    els.setupTitle.textContent = 'Confirma de quién es';
+    els.setupDescription.textContent = 'Puedes corregir el dueño permanente de este teléfono y volver a activar sus avisos.';
     els.pinLabel.textContent = 'PIN del hogar';
     els.pinHelp.textContent = 'No es necesario si este teléfono ya estaba vinculado.';
     els.activateButton.querySelector('span').textContent = 'Volver a activar avisos';
   } else {
     els.setupKicker.textContent = 'Nuevo teléfono';
     els.setupTitle.textContent = 'Vincula este teléfono';
-    els.setupDescription.textContent = 'Elige tu nombre y escribe el PIN que crearon en el primer teléfono.';
+    els.setupDescription.textContent = 'Elige de quién es este teléfono y escribe el PIN que crearon en el primer dispositivo.';
     els.pinLabel.textContent = 'PIN del hogar';
     els.pinHelp.textContent = 'Usa exactamente el mismo PIN del primer teléfono.';
     els.activateButton.querySelector('span').textContent = 'Vincular y activar';
@@ -221,11 +268,12 @@ async function startActivation(withNotifications) {
 function collectSetupValues() {
   const isClaim = state.setupMode === 'claim';
   const pin = els.housePin.value.trim();
-  if (!state.actor) throw localError('Elige quién está usando este teléfono.');
+  if (!state.actor) throw localError('Elige de quién es este teléfono.');
   if (isClaim && pin !== els.confirmPin.value.trim()) throw localError('Los dos campos del PIN no coinciden.');
   if (!state.device && pin.length < 6) throw localError('Escribe un PIN de al menos 6 caracteres.');
   return {
     actor: state.actor,
+    ownerRole: roleForActor(state.actor, state.config?.people),
     pin,
     appUrl: isClaim ? els.appUrl.value.trim() : ''
   };
@@ -234,6 +282,7 @@ function collectSetupValues() {
 async function completeRegistration(values, subscription) {
   const body = {
     actor: values.actor,
+    ownerRole: values.ownerRole,
     pin: state.device ? undefined : values.pin,
     appUrl: state.setupMode === 'claim' ? values.appUrl : undefined,
     deviceId: state.device?.id,
@@ -267,7 +316,8 @@ async function completeRegistration(values, subscription) {
 
 function acceptRegistration(result) {
   state.actor = result.actor;
-  state.device = { id: result.deviceId, secret: result.deviceSecret, actor: result.actor };
+  state.ownerRole = result.ownerRole || state.ownerRole || roleForActor(result.actor, state.config?.people);
+  state.device = { id: result.deviceId, secret: result.deviceSecret, actor: result.actor, ownerRole: state.ownerRole };
   state.bridge = {
     notifyUrl: result.notifyUrl,
     notifySecret: result.bridgeSecret,
@@ -322,13 +372,52 @@ function setFrameUrl(url) {
   if (els.frame.src !== value) els.frame.src = value;
 }
 
-function openApp() {
+function openApp(options = {}) {
   if (!state.config?.appUrl) return;
+  state.launchActor = options.actor || state.actor;
+  state.launchRole = roleForActor(state.launchActor, state.config?.people);
+  state.forceActorOnce = true;
+  if (options.action !== undefined) state.pendingFrameAction = options.action || '';
+  if (options.itemId !== undefined) state.pendingItemId = options.itemId || '';
   setFrameUrl(state.config.appUrl);
   els.setupView.hidden = true;
+  els.quickView.hidden = true;
   els.frame.hidden = false;
   configureFrame();
+  if (state.frameReady && state.launchActor) {
+    postToFrame({ type: 'casa-en-orden:set-actor', actor: state.launchActor });
+  }
   updateInstallUi();
+}
+
+function showQuickView() {
+  state.quickActor = state.actor;
+  els.setupView.hidden = true;
+  els.frame.hidden = true;
+  els.quickView.hidden = false;
+  els.quickActorChooser.hidden = true;
+  renderQuickIdentity();
+  updateInstallUi();
+}
+
+function renderQuickIdentity() {
+  const people = state.config?.people || ['Axel', 'Laura'];
+  const actor = state.quickActor || state.actor || people[0] || 'Axel';
+  const isSecond = people.indexOf(actor) === 1;
+  els.quickAvatar.textContent = initials(actor);
+  els.quickAvatar.classList.toggle('is-second', isSecond);
+  els.quickGreeting.textContent = `Hola, ${firstName(actor)}`;
+  els.quickDescription.textContent = '¿Qué quieres hacer?';
+  els.quickChangeActor.textContent = actor === state.actor ? `No soy ${firstName(state.actor)}` : `Usar como ${firstName(state.actor)}`;
+  renderQuickPeople(people);
+}
+
+function renderQuickPeople(people) {
+  const cleanPeople = [...new Set((people || []).filter(Boolean))].slice(0, 4);
+  els.quickPeopleOptions.innerHTML = cleanPeople.map(name => {
+    const selected = name === state.quickActor ? ' is-selected' : '';
+    return `<button class="person-option${selected}" type="button" data-quick-person="${escapeAttribute(name)}"><span class="mini-avatar">${escapeHtml(initials(name))}</span><strong>${escapeHtml(name)}</strong></button>`;
+  }).join('');
 }
 
 function showSuccess({ pushWorked, bridgeWorked }) {
@@ -358,20 +447,39 @@ function handleFrameMessage(event) {
     state.frameReady = true;
     if (Array.isArray(data.people) && data.people.length) {
       state.config.people = data.people;
+      const currentOwnerName = actorForRole(state.ownerRole, data.people);
+      if (currentOwnerName) {
+        const ownerChanged = state.actor !== currentOwnerName;
+        state.actor = currentOwnerName;
+        if (state.device) {
+          state.device.actor = currentOwnerName;
+          state.device.ownerRole = state.ownerRole;
+          localStorage.setItem(STORAGE_DEVICE, JSON.stringify(state.device));
+        }
+        if (ownerChanged) syncDeviceOwnerName(currentOwnerName);
+      }
+      const currentLaunchName = actorForRole(state.launchRole || state.ownerRole, data.people);
+      if (currentLaunchName) state.launchActor = currentLaunchName;
       renderPeople(data.people);
     }
     if (data.homeName) document.title = data.homeName;
-    if (state.forceActorOnce && state.actor) {
-      state.forceActorOnce = false;
-      postToFrame({ type: 'casa-en-orden:set-actor', actor: state.actor });
-    } else if (state.device && data.actor && data.actor !== state.actor) {
-      scheduleActorUpdate(data.actor);
+    if (state.forceActorOnce && state.launchActor) {
+      if (data.actor !== state.launchActor) {
+        postToFrame({ type: 'casa-en-orden:set-actor', actor: state.launchActor });
+      } else {
+        state.forceActorOnce = false;
+        dispatchPendingFrameAction();
+      }
+    } else {
+      dispatchPendingFrameAction();
     }
     configureFrame();
+    dispatchPendingDataRefresh();
   }
   if (data.type === 'casa-en-orden:shell-ready') {
     state.frameReady = true;
     configureFrame();
+    dispatchPendingDataRefresh();
   }
   if (data.type === 'casa-en-orden:bridge-result') {
     const ok = Boolean(data.ok);
@@ -390,8 +498,21 @@ function configureFrame() {
     notifyUrl: state.bridge.notifyUrl,
     notifySecret: state.bridge.notifySecret,
     appAccessToken: state.bridge.appAccessToken,
+    deviceId: state.device?.id || '',
+    deviceOwner: state.actor,
+    deviceOwnerRole: state.ownerRole,
     pwaUrl: location.origin
   });
+}
+
+function dispatchPendingFrameAction() {
+  const action = state.pendingFrameAction;
+  if (!action) return;
+  state.pendingFrameAction = '';
+  if (action === 'add') postToFrame({ type: 'casa-en-orden:open-new-item', actor: state.launchActor || state.actor });
+  if (action === 'open-item') postToFrame({ type: 'casa-en-orden:open-item', itemId: state.pendingItemId });
+  if (action === 'open-pending') postToFrame({ type: 'casa-en-orden:open-view', view: 'pending' });
+  state.pendingItemId = '';
 }
 
 function postToFrame(message) {
@@ -415,13 +536,24 @@ function waitForBridge(timeoutMs) {
   });
 }
 
-function scheduleActorUpdate(actor) {
-  clearTimeout(state.actorUpdateTimer);
-  state.actorUpdateTimer = setTimeout(() => updateActorRegistration(actor), 350);
+function handleServiceWorkerMessage(event) {
+  const data = event.data;
+  if (!data || data.type !== 'casa-en-orden:data-changed') return;
+  state.pendingDataRefresh = true;
+  state.pendingRefreshItemId = data.itemId || state.pendingRefreshItemId;
+  dispatchPendingDataRefresh();
 }
 
-async function updateActorRegistration(actor) {
-  if (!state.device || !actor) return;
+function dispatchPendingDataRefresh() {
+  if (!state.pendingDataRefresh || !state.frameReady) return;
+  state.pendingDataRefresh = false;
+  postToFrame({ type: 'casa-en-orden:refresh', itemId: state.pendingRefreshItemId || '' });
+  state.pendingRefreshItemId = '';
+}
+
+async function syncDeviceOwnerName(actor) {
+  if (!state.device || state.ownerSyncing) return;
+  state.ownerSyncing = true;
   try {
     const subscription = 'Notification' in window && Notification.permission === 'granted' && state.registration
       ? await state.registration.pushManager.getSubscription()
@@ -430,6 +562,7 @@ async function updateActorRegistration(actor) {
       method: 'POST',
       body: {
         actor,
+        ownerRole: state.ownerRole,
         deviceId: state.device.id,
         deviceSecret: state.device.secret,
         subscription: subscription ? subscription.toJSON() : null
@@ -437,18 +570,21 @@ async function updateActorRegistration(actor) {
     });
     acceptRegistration(result);
   } catch (error) {
-    console.warn('No se pudo actualizar la persona de este teléfono.', error);
+    console.warn('No se pudo sincronizar el nombre del dueño del teléfono.', error);
+  } finally {
+    state.ownerSyncing = false;
   }
 }
 
 function renderPeople(people = ['Axel', 'Laura']) {
   const cleanPeople = [...new Set((people || []).filter(Boolean))];
   if (!cleanPeople.length) cleanPeople.push('Axel', 'Laura');
-  if (!cleanPeople.includes(state.actor)) state.actor = state.actor || cleanPeople[0];
+  if (!cleanPeople.includes(state.actor)) state.actor = actorForRole(state.ownerRole, cleanPeople) || cleanPeople[0];
   els.peopleOptions.innerHTML = cleanPeople.slice(0, 4).map(name => {
     const selected = name === state.actor ? ' is-selected' : '';
     return `<button class="person-option${selected}" type="button" data-person="${escapeAttribute(name)}"><span class="mini-avatar">${escapeHtml(initials(name))}</span><strong>${escapeHtml(name)}</strong></button>`;
   }).join('');
+  if (els.quickView && !els.quickView.hidden) renderQuickIdentity();
 }
 
 function updateInstallUi() {
@@ -458,7 +594,7 @@ function updateInstallUi() {
     ? 'Toca “Instalar” y aparecerá en tu pantalla de inicio.'
     : 'En Chrome o Samsung Internet, abre el menú ⋮ y elige “Agregar a pantalla de inicio”.';
   const dismissed = localStorage.getItem(STORAGE_INSTALL_DISMISSED) === '1';
-  els.installBanner.hidden = standalone || dismissed || !els.setupView.hidden;
+  els.installBanner.hidden = standalone || dismissed || !els.setupView.hidden || !els.quickView.hidden;
 }
 
 async function requestInstall() {
@@ -572,6 +708,20 @@ function errorMessage(error) {
 
 function initials(name) {
   return String(name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase();
+}
+
+function firstName(name) {
+  return String(name || '').trim().split(/\s+/)[0] || 'Hola';
+}
+
+function roleForActor(actor, people = ['Axel', 'Laura']) {
+  const index = (people || []).findIndex(name => String(name || '').toLocaleLowerCase('es') === String(actor || '').toLocaleLowerCase('es'));
+  return index === 1 ? 'person2' : 'person1';
+}
+
+function actorForRole(role, people = ['Axel', 'Laura']) {
+  const index = role === 'person2' ? 1 : 0;
+  return people && people[index] ? people[index] : '';
 }
 
 function escapeHtml(value) {
