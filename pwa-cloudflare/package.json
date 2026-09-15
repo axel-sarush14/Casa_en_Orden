@@ -1,0 +1,22 @@
+{
+  "name": "casa-en-orden-pwa",
+  "version": "4.0.0",
+  "private": true,
+  "type": "module",
+  "description": "PWA instalable y puente Web Push para Casa en Orden, sin Firebase.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node --test tests/*.test.mjs",
+    "check": "node --check src/core.js && node --check src/worker.js && node --check public/app.js && node --check public/sw.js && npm test"
+  },
+  "dependencies": {
+    "web-push-neo": "0.1.2"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,4 @@
+Casa en Orden 4.0.0
+Base: Respaldo_AppsScript_Casa_en_Orden_20260911_000535.zip
+SHA-256 de la base: a550feabb17a2d0dda779310fc75004f5d1228ac29d58f8dfdccc0415f0714d4
+Generado: 2026-09-11
