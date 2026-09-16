@@ -125,8 +125,8 @@ function saveItem(payload, accessToken) {
       createdBy: current ? current.createdBy : data.actor,
       status: current ? current.status : 'Pendiente',
       portalUrl: data.portalUrl,
-      receiptUrl: current ? current.receiptUrl : '',
-      receiptName: current ? current.receiptName : '',
+      receiptUrl: current && !data.removeAttachment ? current.receiptUrl : '',
+      receiptName: current && !data.removeAttachment ? current.receiptName : '',
       createdAt: current ? current.createdAtRaw : now,
       updatedAt: now,
       completedBy: current ? current.completedBy : '',
@@ -246,11 +246,24 @@ function uploadReceipt(payload, accessToken) {
     if (!rowNumber) throw new Error('No encontramos el pendiente relacionado.');
     const item = itemFromRow_(sheet.getRange(rowNumber, 1, 1, APP.ITEM_HEADERS.length).getValues()[0]);
 
-    const folder = getReceiptFolder_();
-    const finalName = `${item.id}-${filename}`;
+    const isProductPhoto = item.type !== 'Servicio';
+    if (isProductPhoto && !mimeType.startsWith('image/')) {
+      throw new Error('Para este pendiente selecciona una foto JPG, PNG o WEBP.');
+    }
+    const folder = isProductPhoto ? getItemPhotoFolder_() : getReceiptFolder_();
+    const finalName = `${item.id}-${Date.now()}-${filename}`;
     const blob = Utilities.newBlob(bytes, mimeType, finalName);
     const file = folder.createFile(blob);
-    const fileUrl = file.getUrl();
+    let fileUrl = file.getUrl();
+    if (isProductPhoto) {
+      try {
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+        fileUrl = `https://drive.google.com/thumbnail?id=${file.getId()}&sz=w1200`;
+      } catch (error) {
+        try { file.setTrashed(true); } catch (cleanupError) { console.warn(cleanupError); }
+        throw new Error('No pudimos habilitar la foto para verla en ambos teléfonos.');
+      }
+    }
 
     item.receiptUrl = fileUrl;
     item.receiptName = filename;
@@ -258,7 +271,7 @@ function uploadReceipt(payload, accessToken) {
     item.updatedAtRaw = item.updatedAt;
     const row = itemToRow_(item);
     sheet.getRange(rowNumber, 1, 1, row.length).setValues([row]);
-    addActivity_(itemId, 'Adjuntó', `Adjuntó ${filename} a ${item.title}`, actor);
+    addActivity_(itemId, isProductPhoto ? 'Agregó foto' : 'Adjuntó', `${isProductPhoto ? 'Agregó una foto a' : `Adjuntó ${filename} a`} ${item.title}`, actor);
     SpreadsheetApp.flush();
     return { ok: true, item: publicItem_(itemFromRow_(row)) };
   } finally {
@@ -289,6 +302,7 @@ function saveSettings(payload, accessToken) {
     else sheet.appendRow([key, values[key]]);
   });
   shareReceiptFolder_();
+  shareItemPhotoFolder_();
   shareCatalogImageFolder_();
   addActivity_('', 'Configuró', 'Actualizó la configuración del hogar', cleanText_(payload && payload.actor, 80) || 'Alguien');
   SpreadsheetApp.flush();
@@ -605,6 +619,7 @@ function normalizeItemPayload_(payload) {
     recurrence,
     recurrenceDays,
     repeatAmount: Boolean(payload && payload.repeatAmount),
+    removeAttachment: Boolean(payload && payload.removeAttachment),
     originDeviceId: cleanText_(payload && payload.originDeviceId, 120)
   };
 }
@@ -1029,6 +1044,31 @@ function getReceiptFolder_() {
 function shareReceiptFolder_(folder) {
   const target = folder || (() => {
     const folderId = PropertiesService.getScriptProperties().getProperty('RECEIPT_FOLDER_ID');
+    if (!folderId) return null;
+    try { return DriveApp.getFolderById(folderId); } catch (error) { return null; }
+  })();
+  if (!target) return;
+  const settings = getSettings_();
+  [settings.person1Email, settings.person2Email].filter(Boolean).forEach(email => {
+    try { target.addViewer(email); } catch (error) { console.warn(`No se pudo compartir con ${email}: ${error.message}`); }
+  });
+}
+
+function getItemPhotoFolder_() {
+  const properties = PropertiesService.getScriptProperties();
+  const folderId = properties.getProperty('ITEM_PHOTO_FOLDER_ID');
+  if (folderId) {
+    try { return DriveApp.getFolderById(folderId); } catch (error) { console.warn(error); }
+  }
+  const folder = DriveApp.createFolder('Casa en Orden - Fotos de pendientes');
+  properties.setProperty('ITEM_PHOTO_FOLDER_ID', folder.getId());
+  shareItemPhotoFolder_(folder);
+  return folder;
+}
+
+function shareItemPhotoFolder_(folder) {
+  const target = folder || (() => {
+    const folderId = PropertiesService.getScriptProperties().getProperty('ITEM_PHOTO_FOLDER_ID');
     if (!folderId) return null;
     try { return DriveApp.getFolderById(folderId); } catch (error) { return null; }
   })();

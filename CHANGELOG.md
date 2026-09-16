@@ -1,5 +1,17 @@
 # Historial de cambios
 
+## 4.3.0 — 2026-09-16
+
+- Mantiene ocultos los resultados del catálogo mientras el buscador de **Nuevo pendiente** esté vacío.
+- Muestra únicamente hasta siete coincidencias después de escribir una búsqueda.
+- Agrega **Tomar o elegir foto** directamente al alta y edición de pendientes de despensa, reparación y otros.
+- Presenta una vista previa y permite cambiar o quitar la foto antes de guardar.
+- Reduce la imagen en el teléfono y la guarda en una carpeta específica de Drive.
+- Muestra la foto como miniatura en la lista y en tamaño grande dentro del detalle.
+- Usa como respaldo la imagen del producto vinculado en el catálogo cuando el pendiente no tiene una foto propia.
+- Conserva para servicios el comprobante independiente en imagen o PDF.
+- Mantiene intactos los pendientes, el catálogo, el PIN, los teléfonos vinculados y las suscripciones de la versión 4.2.
+
 ## 4.2.0 — 2026-09-16
 
 - Sustituye la URL manual de imagen por un selector compatible con cámara y galería.

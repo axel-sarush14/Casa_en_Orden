@@ -258,6 +258,26 @@
         <textarea id="itemDetail" name="detail" maxlength="500" rows="3" placeholder="Marca, medida, ubicación o cualquier nota"></textarea>
       </div>
 
+      <div id="itemAttachmentField" class="field item-attachment-field">
+        <label id="itemAttachmentTitle" for="itemFile">Foto del producto <span>opcional</span></label>
+        <input id="itemRemoveAttachment" name="removeAttachment" type="hidden" value="false">
+        <div id="itemAttachmentPreview" class="item-attachment-preview" hidden>
+          <img id="itemAttachmentPreviewImg" alt="Vista previa del adjunto">
+          <span id="itemAttachmentFileIcon" class="item-attachment-file-icon" hidden>📄</span>
+          <div class="item-attachment-copy">
+            <strong id="itemAttachmentPreviewName">Foto seleccionada</strong>
+            <small id="itemAttachmentPreviewNote">Se guardará con este pendiente.</small>
+          </div>
+          <button id="removeItemAttachment" class="text-button item-attachment-remove" type="button">Quitar</button>
+        </div>
+        <label class="secondary-button form-attachment">
+          <svg class="icon"><use id="itemAttachmentIconUse" href="#i-camera"/></svg>
+          <span id="itemFileLabel">Tomar o elegir foto</span>
+          <input id="itemFile" type="file" accept="image/*">
+        </label>
+        <small id="itemAttachmentHelp" class="item-attachment-help">Abre la cámara o elige una imagen de la galería.</small>
+      </div>
+
       <div class="two-columns">
         <div class="field">
           <label for="itemQuantity">Cantidad</label>
@@ -325,12 +345,6 @@
         <label for="itemDueDate">Fecha límite <span>opcional</span></label>
         <input id="itemDueDate" name="dueDate" type="date">
       </div>
-
-      <label class="secondary-button form-attachment">
-        <svg class="icon"><use href="#i-upload"/></svg>
-        <span id="itemFileLabel">Agregar foto o comprobante</span>
-        <input id="itemFile" type="file" accept="image/jpeg,image/png,image/webp,application/pdf">
-      </label>
 
       <div class="form-actions">
         <button id="saveItemButton" class="primary-button" type="submit">Guardar y avisar</button>

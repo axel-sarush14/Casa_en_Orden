@@ -1,4 +1,4 @@
-Casa en Orden 4.2.0
-Base: Casa_en_Orden_4.1_Catalogo_Unificado.zip
-SHA-256 de la base: c664423571f0603e3506ee2e445e8bd0e45a973f72e9536b6692e29d3647f466
+Casa en Orden 4.3.0
+Base: Casa_en_Orden_4.2_Fotos_Camara_Galeria.zip
+SHA-256 de la base: d4c2de5ecf76b89a0100c7e2f9a9ea770fc0de560adf8502ec8d7b79d383ad3a
 Generado: 2026-09-16

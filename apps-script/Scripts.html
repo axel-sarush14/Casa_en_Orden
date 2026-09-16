@@ -12,6 +12,11 @@
   let PWA_ACCESS_TOKEN = '';
   let PWA_DEVICE_ID = '';
   let PWA_DEVICE_OWNER = '';
+  let itemAttachmentDraft = null;
+  let itemAttachmentPreparing = false;
+  let itemAttachmentSelectionId = 0;
+  let itemExistingAttachment = null;
+  let itemOriginalType = '';
   let catalogImageDraft = null;
   let catalogImagePreparing = false;
   let catalogImageSelectionId = 0;
@@ -41,6 +46,9 @@
     toastRegion: $('#toastRegion'), actorSheet: $('#actorSheet'), actorOptions: $('#actorOptions'),
     formSheet: $('#formSheet'), itemForm: $('#itemForm'), formTitle: $('#formSheetTitle'),
     formKicker: $('#formSheetKicker'), saveItemButton: $('#saveItemButton'),
+    itemFile: $('#itemFile'), itemFileLabel: $('#itemFileLabel'), itemAttachmentPreview: $('#itemAttachmentPreview'),
+    itemAttachmentPreviewImg: $('#itemAttachmentPreviewImg'), itemAttachmentFileIcon: $('#itemAttachmentFileIcon'),
+    removeItemAttachment: $('#removeItemAttachment'),
     catalogList: $('#catalogList'), catalogSearch: $('#catalogSearch'), catalogSuggestions: $('#catalogSuggestions'),
     selectedCatalog: $('#selectedCatalog'), catalogFormSheet: $('#catalogFormSheet'), catalogForm: $('#catalogForm'),
     saveCatalogButton: $('#saveCatalogButton'), toggleCatalogButton: $('#toggleCatalogButton'),
@@ -94,14 +102,13 @@
     els.itemForm.addEventListener('submit', handleItemSubmit);
     els.itemForm.addEventListener('change', event => {
       if (event.target.name === 'type') {
+        handleItemTypeChange(event.target.value);
         updateConditionalFields();
       }
       if (event.target.name === 'serviceMode' || event.target.name === 'recurrence') updateConditionalFields();
-      if (event.target.id === 'itemFile') {
-        const file = event.target.files[0];
-        $('#itemFileLabel').textContent = file ? file.name : 'Agregar foto o comprobante';
-      }
     });
+    els.itemFile.addEventListener('change', handleItemAttachmentSelection);
+    els.removeItemAttachment.addEventListener('click', clearItemAttachment);
     els.settingsForm.addEventListener('input', () => { state.settingsDirty = true; });
     els.settingsForm.addEventListener('submit', handleSettingsSubmit);
     $('#deviceSettingsButton').addEventListener('click', () => postToPwa({ type: 'casa-en-orden:open-notification-settings' }));
@@ -335,7 +342,9 @@
 
   function itemCard(item, options = {}) {
     const icon = typeIcon(item.type);
-    const iconClass = item.type === 'Servicio' ? 'service' : item.type === 'Reparación' ? 'repair' : item.type === 'Otro' ? 'other' : '';
+    const photoUrl = itemProductPhotoUrl(item);
+    const iconClass = `${item.type === 'Servicio' ? 'service' : item.type === 'Reparación' ? 'repair' : item.type === 'Otro' ? 'other' : ''}${photoUrl ? ' has-photo' : ''}`;
+    const visual = photoUrl ? `<img src="${escapeAttr(photoUrl)}" alt="" loading="lazy">` : icon;
     const due = dueLabel(item.dueDate);
     const meta = [];
     if (item.amount !== '' && item.amount != null) meta.push(`<strong class="item-amount">${currency(item.amount)}</strong>`);
@@ -360,7 +369,7 @@
     }
 
     return `<article class="item-card ${item.status === 'Completado' ? 'is-completed' : ''}" role="button" tabindex="0" data-item-id="${escapeAttr(item.id)}">
-      <span class="item-icon ${iconClass}">${icon}</span>
+      <span class="item-icon ${iconClass}">${visual}</span>
       <span class="item-copy"><span class="item-title">${escapeHtml(item.title)}</span><span class="item-meta">${meta.join('')}</span></span>
       <span class="item-end">${end}</span>
     </article>`;
@@ -383,7 +392,7 @@
   function openForm(item = null) {
     els.itemForm.reset();
     clearSelectedCatalog();
-    $('#itemFileLabel').textContent = 'Agregar foto o comprobante';
+    resetItemAttachmentForm(item);
     $('#itemId').value = item ? item.id : '';
     els.formTitle.textContent = item ? 'Editar pendiente' : 'Nuevo pendiente';
     els.formKicker.textContent = item ? 'Actualizar información' : 'Agregar a la lista';
@@ -406,6 +415,14 @@
       renderResponsibleChoices(item.responsible);
       const catalogEntry = findCatalogEntry(item.catalogId);
       if (catalogEntry) showSelectedCatalog(catalogEntry);
+      if (itemExistingAttachment) {
+        showItemAttachmentPreview(
+          itemExistingAttachment.url,
+          itemExistingAttachment.name,
+          item.type !== 'Servicio' && isImageFilename(itemExistingAttachment.name),
+          item.type === 'Servicio' ? 'Comprobante actual' : 'Foto actual'
+        );
+      }
     } else {
       renderResponsibleChoices(state.actor);
       setRadio('type', 'Despensa');
@@ -430,6 +447,7 @@
     $('#itemDueDate').required = isRecurring;
     $('#itemRecurrenceDays').required = isRecurring && $('#itemRecurrence').value === 'Personalizada';
     $('#itemPortalLabel').innerHTML = isService ? 'Portal de pago <span>opcional</span>' : 'Enlace de compra <span>opcional</span>';
+    updateItemAttachmentControls();
     renderCatalogSuggestions();
   }
 
@@ -439,6 +457,11 @@
       return;
     }
     const query = normalizeText(els.catalogSearch.value);
+    if (!query) {
+      els.catalogSuggestions.hidden = true;
+      els.catalogSuggestions.innerHTML = '';
+      return;
+    }
     const entries = (state.data.catalog || [])
       .filter(entry => entry.active)
       .map(entry => ({ entry, score: catalogSearchScore(entry, query) }))
@@ -491,6 +514,10 @@
 
   async function handleItemSubmit(event) {
     event.preventDefault();
+    if (itemAttachmentPreparing) {
+      toast('Espera un momento mientras preparamos la imagen.');
+      return;
+    }
     const form = new FormData(els.itemForm);
     const payload = {
       id: form.get('id') || '',
@@ -509,22 +536,19 @@
       recurrence: form.get('recurrence') || '',
       recurrenceDays: form.get('recurrenceDays') || '',
       repeatAmount: form.get('repeatAmount') === 'on',
+      removeAttachment: form.get('removeAttachment') === 'true',
       originDeviceId: PWA_DEVICE_ID
     };
-    const attachment = $('#itemFile').files[0];
-    if (attachment && attachment.size > 5 * 1024 * 1024) {
-      return toast('El archivo debe pesar menos de 5 MB.', 'error');
-    }
+    const attachment = itemAttachmentDraft;
     setBusy(els.saveItemButton, true);
     try {
       const result = await api('saveItem', payload);
       let attachmentError = '';
       if (attachment) {
         try {
-          const dataUrl = await readFile(attachment);
-          await api('uploadReceipt', { itemId: result.item.id, actor: state.actor, filename: attachment.name, dataUrl });
+          await api('uploadReceipt', { itemId: result.item.id, actor: state.actor, filename: attachment.filename, dataUrl: attachment.dataUrl });
         } catch (error) {
-          attachmentError = `El pendiente se guardó, pero el archivo no: ${errorMessage(error)}`;
+          attachmentError = `El pendiente se guardó, pero ${payload.type === 'Servicio' ? 'el comprobante' : 'la foto'} no: ${errorMessage(error)}`;
         }
       }
       closeSheets();
@@ -537,6 +561,138 @@
     } finally {
       setBusy(els.saveItemButton, false);
     }
+  }
+
+  function resetItemAttachmentForm(item) {
+    itemAttachmentSelectionId += 1;
+    itemAttachmentDraft = null;
+    itemAttachmentPreparing = false;
+    itemOriginalType = item && item.type || 'Despensa';
+    itemExistingAttachment = item && item.receiptUrl ? { url: item.receiptUrl, name: item.receiptName || 'Archivo actual' } : null;
+    els.itemFile.value = '';
+    $('#itemRemoveAttachment').value = 'false';
+    els.itemAttachmentPreview.hidden = true;
+    els.itemAttachmentPreviewImg.removeAttribute('src');
+    els.itemAttachmentFileIcon.hidden = true;
+    els.saveItemButton.disabled = false;
+  }
+
+  function handleItemTypeChange(type) {
+    clearItemAttachmentDraft();
+    if (itemExistingAttachment && type === itemOriginalType) {
+      $('#itemRemoveAttachment').value = 'false';
+      showItemAttachmentPreview(
+        itemExistingAttachment.url,
+        itemExistingAttachment.name,
+        type !== 'Servicio' && isImageFilename(itemExistingAttachment.name),
+        type === 'Servicio' ? 'Comprobante actual' : 'Foto actual'
+      );
+    } else if (itemExistingAttachment) {
+      $('#itemRemoveAttachment').value = 'true';
+      hideItemAttachmentPreview();
+    }
+  }
+
+  async function handleItemAttachmentSelection(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    const selectionId = ++itemAttachmentSelectionId;
+    const isService = checkedValue('type') === 'Servicio';
+    itemAttachmentPreparing = true;
+    els.saveItemButton.disabled = true;
+    els.itemFileLabel.textContent = isService ? 'Preparando comprobante…' : 'Preparando foto…';
+    try {
+      let prepared;
+      if (isService && file.type === 'application/pdf') {
+        if (file.size > 5 * 1024 * 1024) throw new Error('El PDF debe pesar menos de 5 MB.');
+        prepared = { dataUrl: await readFile(file), filename: file.name || 'comprobante.pdf', isImage: false };
+      } else {
+        prepared = await prepareCatalogImage(file);
+        prepared.isImage = true;
+      }
+      if (selectionId !== itemAttachmentSelectionId) return;
+      itemAttachmentDraft = prepared;
+      $('#itemRemoveAttachment').value = 'false';
+      showItemAttachmentPreview(
+        prepared.isImage ? prepared.dataUrl : '',
+        prepared.filename,
+        prepared.isImage,
+        isService ? 'Comprobante listo para guardar' : 'Foto lista para guardar'
+      );
+    } catch (error) {
+      if (selectionId !== itemAttachmentSelectionId) return;
+      event.target.value = '';
+      toast(errorMessage(error), 'error', 6000);
+    } finally {
+      if (selectionId !== itemAttachmentSelectionId) return;
+      itemAttachmentPreparing = false;
+      els.saveItemButton.disabled = false;
+      updateItemAttachmentControls();
+    }
+  }
+
+  function updateItemAttachmentControls() {
+    const isService = checkedValue('type') === 'Servicio';
+    $('#itemAttachmentTitle').innerHTML = isService
+      ? 'Comprobante del servicio <span>opcional</span>'
+      : 'Foto del producto <span>opcional</span>';
+    els.itemFile.accept = isService ? 'image/*,application/pdf' : 'image/*';
+    $('#itemAttachmentIconUse').setAttribute('href', isService ? '#i-upload' : '#i-camera');
+    $('#itemAttachmentHelp').textContent = isService
+      ? 'Puedes adjuntar una foto del recibo o un archivo PDF.'
+      : 'Abre la cámara o elige una imagen de la galería.';
+    const hasAttachment = !els.itemAttachmentPreview.hidden;
+    els.itemFileLabel.textContent = hasAttachment
+      ? (isService ? 'Cambiar comprobante' : 'Cambiar foto')
+      : (isService ? 'Adjuntar foto o PDF' : 'Tomar o elegir foto');
+  }
+
+  function showItemAttachmentPreview(source, name, isImage, note) {
+    els.itemAttachmentPreviewImg.hidden = !isImage;
+    els.itemAttachmentFileIcon.hidden = isImage;
+    if (isImage) els.itemAttachmentPreviewImg.src = source;
+    else els.itemAttachmentPreviewImg.removeAttribute('src');
+    $('#itemAttachmentPreviewName').textContent = name || 'Archivo seleccionado';
+    $('#itemAttachmentPreviewNote').textContent = note || 'Se guardará con este pendiente.';
+    els.itemAttachmentPreview.hidden = false;
+    updateItemAttachmentControls();
+  }
+
+  function hideItemAttachmentPreview() {
+    els.itemAttachmentPreview.hidden = true;
+    els.itemAttachmentPreviewImg.hidden = false;
+    els.itemAttachmentPreviewImg.removeAttribute('src');
+    els.itemAttachmentFileIcon.hidden = true;
+    updateItemAttachmentControls();
+  }
+
+  function clearItemAttachmentDraft() {
+    if (!itemAttachmentDraft && !itemAttachmentPreparing) return;
+    itemAttachmentSelectionId += 1;
+    itemAttachmentDraft = null;
+    itemAttachmentPreparing = false;
+    els.saveItemButton.disabled = false;
+    els.itemFile.value = '';
+    if (itemExistingAttachment && $('#itemRemoveAttachment').value !== 'true') {
+      showItemAttachmentPreview(
+        itemExistingAttachment.url,
+        itemExistingAttachment.name,
+        checkedValue('type') !== 'Servicio' && isImageFilename(itemExistingAttachment.name),
+        checkedValue('type') === 'Servicio' ? 'Comprobante actual' : 'Foto actual'
+      );
+    } else {
+      hideItemAttachmentPreview();
+    }
+  }
+
+  function clearItemAttachment() {
+    itemAttachmentSelectionId += 1;
+    itemAttachmentDraft = null;
+    itemAttachmentPreparing = false;
+    els.itemFile.value = '';
+    $('#itemRemoveAttachment').value = itemExistingAttachment ? 'true' : 'false';
+    els.saveItemButton.disabled = false;
+    hideItemAttachmentPreview();
   }
 
   async function handleSettingsSubmit(event) {
@@ -715,6 +871,7 @@
     const item = findItem(itemId);
     if (!item) return;
     state.selectedId = itemId;
+    const productPhotoUrl = itemProductPhotoUrl(item);
     const due = item.dueDate ? longDate(item.dueDate) : 'Sin fecha límite';
     const statusClass = item.priority === 'Urgente' ? 'urgent' : item.status === 'Completado' ? 'complete' : '';
     const actionLabel = item.status === 'Completado' ? 'Reabrir pendiente' : item.type === 'Servicio' ? 'Marcar como pagado' : item.type === 'Despensa' ? 'Marcar como comprado' : 'Marcar como completado';
@@ -727,6 +884,7 @@
       <div><span class="detail-type">${typeIcon(item.type)} ${escapeHtml(item.type)}</span><h2 id="detailTitle" class="detail-title">${escapeHtml(item.title)}</h2></div>
       <button class="icon-button" type="button" data-detail-action="close" aria-label="Cerrar"><svg class="icon"><use href="#i-close"/></svg></button>
     </div>
+    ${productPhotoUrl ? `<img class="detail-photo" src="${escapeAttr(productPhotoUrl)}" alt="Foto de ${escapeAttr(item.title)}">` : ''}
     ${item.detail ? `<p class="detail-description">${escapeHtml(item.detail)}</p>` : ''}
     ${recurrenceCopy}
     <div class="detail-grid">
@@ -735,12 +893,12 @@
       <div class="detail-stat"><small>Fecha límite</small><strong>${escapeHtml(due)}</strong></div>
       <div class="detail-stat"><small>${item.type === 'Servicio' ? 'Monto' : 'Cantidad'}</small><strong>${item.type === 'Servicio' ? (item.amount === '' ? 'Sin monto' : currency(item.amount)) : (item.quantity === '' ? 'Sin cantidad' : number(item.quantity))}</strong></div>
     </div>
-    ${item.receiptUrl ? `<p class="detail-description">Comprobante: <a class="detail-link" href="${escapeAttr(item.receiptUrl)}" target="_blank" rel="noopener">${escapeHtml(item.receiptName || 'Abrir archivo')}</a></p>` : ''}
+    ${item.type === 'Servicio' && item.receiptUrl ? `<p class="detail-description">Comprobante: <a class="detail-link" href="${escapeAttr(item.receiptUrl)}" target="_blank" rel="noopener">${escapeHtml(item.receiptName || 'Abrir archivo')}</a></p>` : ''}
     <div class="detail-actions">
       ${item.status !== 'Cancelado' ? `<button class="primary-button" type="button" data-detail-action="toggle">${actionIcon}${escapeHtml(actionLabel)}</button>` : ''}
-      <div class="detail-action-row">
+      <div class="detail-action-row ${item.type === 'Servicio' ? '' : 'single'}">
         <button class="secondary-button" type="button" data-detail-action="edit"><svg class="icon"><use href="#i-edit"/></svg> Editar</button>
-        <label class="secondary-button attachment-label"><svg class="icon"><use href="#i-upload"/></svg> ${item.receiptUrl ? 'Cambiar archivo' : 'Adjuntar archivo'}<input type="file" data-receipt-input accept="image/jpeg,image/png,image/webp,application/pdf"></label>
+        ${item.type === 'Servicio' ? `<label class="secondary-button attachment-label"><svg class="icon"><use href="#i-upload"/></svg> ${item.receiptUrl ? 'Cambiar comprobante' : 'Adjuntar comprobante'}<input type="file" data-receipt-input accept="image/*,application/pdf"></label>` : ''}
       </div>
       ${item.portalUrl ? `<a class="secondary-button detail-link" href="${escapeAttr(item.portalUrl)}" target="_blank" rel="noopener"><svg class="icon"><use href="#i-external"/></svg> ${item.type === 'Servicio' ? 'Abrir portal de pago' : 'Abrir enlace de compra'}</a>` : ''}
       ${item.status === 'Pendiente' ? '<button class="text-button danger-text" type="button" data-detail-action="cancel">Cancelar este pendiente</button>' : ''}
@@ -797,16 +955,18 @@
     const input = event.target.closest('[data-receipt-input]');
     if (!input || !input.files[0]) return;
     const file = input.files[0];
-    if (file.size > 5 * 1024 * 1024) {
-      input.value = '';
-      return toast('El archivo debe pesar menos de 5 MB.', 'error');
-    }
     const label = input.closest('.attachment-label');
     setBusy(label, true);
     try {
-      const dataUrl = await readFile(file);
-      await api('uploadReceipt', { itemId: state.selectedId, actor: state.actor, filename: file.name, dataUrl });
-      toast('Archivo guardado en Drive.');
+      let prepared;
+      if (file.type === 'application/pdf') {
+        if (file.size > 5 * 1024 * 1024) throw new Error('El PDF debe pesar menos de 5 MB.');
+        prepared = { dataUrl: await readFile(file), filename: file.name || 'comprobante.pdf' };
+      } else {
+        prepared = await prepareCatalogImage(file);
+      }
+      await api('uploadReceipt', { itemId: state.selectedId, actor: state.actor, filename: prepared.filename, dataUrl: prepared.dataUrl });
+      toast('Comprobante guardado en Drive.');
       await loadData();
       openDetail(state.selectedId);
     } catch (error) {
@@ -1007,6 +1167,15 @@
 
   function findItem(id) { return state.data.items.find(item => item.id === id); }
   function findCatalogEntry(id) { return (state.data.catalog || []).find(entry => entry.id === id); }
+  function isImageFilename(value) { return /\.(?:jpe?g|png|webp)$/i.test(String(value || '')); }
+  function itemProductPhotoUrl(item) {
+    if (!item || item.type === 'Servicio') return '';
+    if (item.receiptUrl && (isImageFilename(item.receiptName) || /drive\.google\.com\/thumbnail/i.test(item.receiptUrl))) {
+      return item.receiptUrl;
+    }
+    const catalogEntry = findCatalogEntry(item.catalogId);
+    return catalogEntry && catalogEntry.imageUrl || '';
+  }
   function catalogThumbnail(entry) {
     return entry && entry.imageUrl
       ? `<span class="catalog-thumb"><img src="${escapeAttr(entry.imageUrl)}" alt="" loading="lazy"></span>`
@@ -1167,9 +1336,17 @@
             const payload = args[0];
             let item = data.items.find(entry => entry.id === payload.id);
             const now = new Date().toISOString();
-            if (item) Object.assign(item, payload, { updatedAt: now });
+            const cleanPayload = { ...payload };
+            delete cleanPayload.removeAttachment;
+            if (item) {
+              if (payload.removeAttachment) {
+                item.receiptUrl = '';
+                item.receiptName = '';
+              }
+              Object.assign(item, cleanPayload, { updatedAt: now });
+            }
             else {
-              item = Object.assign({}, payload, { id: `HOG-${Math.random().toString(16).slice(2, 10).toUpperCase()}`, status: 'Pendiente', createdBy: payload.actor, createdAt: now, updatedAt: now, completedBy: '', completedAt: '', receiptUrl: '', receiptName: '' });
+              item = Object.assign({}, cleanPayload, { id: `HOG-${Math.random().toString(16).slice(2, 10).toUpperCase()}`, status: 'Pendiente', createdBy: payload.actor, createdAt: now, updatedAt: now, completedBy: '', completedAt: '', receiptUrl: '', receiptName: '' });
               data.items.unshift(item);
             }
             demoActivity(data, item.id, payload.id ? 'Editó' : 'Agregó', `${payload.id ? 'Editó' : 'Agregó'} ${item.title}`, payload.actor);

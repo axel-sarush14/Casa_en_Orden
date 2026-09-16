@@ -1,6 +1,6 @@
-# Casa en Orden 4.2 — fotos desde cámara o galería
+# Casa en Orden 4.3 — catálogo compacto y fotos en pendientes
 
-Esta versión actualiza Casa en Orden 4.1 sin borrar pendientes, productos del catálogo, fotos existentes, la Hoja de cálculo ni comprobantes de Drive. Ahora las fotos de los productos se pueden tomar con la cámara o seleccionar desde la galería del teléfono.
+Esta versión actualiza Casa en Orden 4.2 sin borrar pendientes, productos del catálogo, fotos existentes, la Hoja de cálculo ni comprobantes de Drive. Al crear un pendiente, el catálogo permanece cerrado hasta que escribes una búsqueda y ahora puedes tomar o elegir una foto del producto directamente en ese mismo formulario.
 
 GitHub y Cloudflare publican la PWA y entregan Web Push directo. No usa Firebase ni requiere crear llaves manualmente.
 
@@ -15,11 +15,15 @@ GitHub y Cloudflare publican la PWA y entregan Web Push directo. No usa Firebase
 - Los servicios pueden ser de pago **Único** o **Recurrente**.
 - Al marcar como pagado un servicio recurrente, se genera una sola vez el siguiente vencimiento.
 - El catálogo es único para toda la casa: busca coincidencias sin importar si el pendiente es de despensa, servicio, reparación u otro tipo.
+- En **Nuevo pendiente**, el catálogo ya no despliega productos al abrir: las coincidencias aparecen solamente después de escribir y se limitan a las siete más cercanas.
 - El formulario del catálogo se reduce a nombre del producto, descripción o referencia, enlace de compra e imagen.
 - Los datos anteriores de producto, marca, modelo, especificaciones, presentación y ubicación se conservan y se muestran juntos en la descripción.
 - El campo de URL de imagen se sustituye por **Tomar o elegir foto**.
 - La app muestra una vista previa y reduce automáticamente las fotos grandes antes de subirlas.
-- Las fotos se guardan en una carpeta de Drive y se muestran en el catálogo, los resultados de búsqueda y el producto seleccionado.
+- Los pendientes de despensa, reparación u otro tipo también permiten **Tomar o elegir foto** al momento de registrarlos.
+- La foto propia del pendiente se muestra como miniatura en la lista y en grande al abrir el detalle; si no tiene una, puede usar la imagen vinculada del catálogo.
+- Los servicios conservan su flujo separado de comprobante, compatible con fotografía o PDF.
+- Las fotos se guardan en Drive y se muestran en ambos teléfonos.
 
 ## Contenido del paquete
 
@@ -28,7 +32,7 @@ GitHub y Cloudflare publican la PWA y entregan Web Push directo. No usa Firebase
 | `apps-script/` | Código actualizado de Google Apps Script. |
 | `pwa-cloudflare/` | PWA y Worker que se publican desde GitHub en Cloudflare. |
 
-## Actualizar una instalación 4.1 existente
+## Actualizar una instalación 4.2 existente
 
 ### 1. Actualiza Apps Script
 
@@ -137,7 +141,7 @@ Cuando un recurrente se marca como pagado, el pago actual conserva su comprobant
 3. En **Descripción o referencia** reúne solo lo que necesiten recordar, por ejemplo `20 W · 127 V · 22 cm · luz blanca LED`.
 4. Si conviene, añade el enlace de compra y pulsa **Tomar o elegir foto**. Android permitirá abrir la cámara o escoger una imagen de la galería.
 5. Al crear cualquier pendiente, busca palabras del nombre o la descripción en **Buscar en todo el catálogo**. No es necesario seleccionar antes la categoría correcta.
-6. La app ordena primero las coincidencias más cercanas y completa el título, el detalle y el enlace; todavía puedes ajustarlos para ese pendiente.
+6. El área de resultados permanece oculta mientras el buscador esté vacío. Al escribir, la app muestra como máximo siete coincidencias, ordena primero las más cercanas y completa el título, el detalle y el enlace; todavía puedes ajustarlos para ese pendiente.
 
 Elegir un producto del catálogo no cambia el tipo del pendiente: **Despensa**, **Servicio**, **Reparación** y **Otro** siguen sirviendo para organizar la lista. Los productos pueden desactivarse sin borrarlos y los pendientes anteriores conservan la información que tenían al momento de crearse.
 
@@ -150,6 +154,17 @@ Los productos guardados en 4.0 no necesitan capturarse otra vez. Al abrirlos, la
 - Al editar un producto, no elegir otra foto conserva la actual; **Quitar** elimina su vínculo del catálogo.
 - La primera carga crea automáticamente en Drive la carpeta `Casa en Orden - Fotos del catálogo`.
 - Cada imagen se habilita como visible mediante enlace para que pueda mostrarse en los dos teléfonos sin pedir inicio de sesión. El enlace es difícil de adivinar, pero no debe usarse para fotografías privadas o sensibles.
+
+## Fotos al crear un pendiente
+
+- En **Despensa**, **Reparación** y **Otro**, pulsa **Tomar o elegir foto**. Android mostrará la cámara y la galería disponibles en el teléfono.
+- La app enseña una vista previa antes de guardar, permite cambiarla o quitarla y la reduce automáticamente para ahorrar datos.
+- Al guardar, la foto aparece como miniatura en la lista y en tamaño grande dentro del detalle del pendiente.
+- Si seleccionaste un producto del catálogo y no agregas una foto especial, la app utiliza la imagen de ese producto como referencia.
+- Al editar un pendiente, no elegir otra foto conserva la existente; **Quitar** desvincula la foto del registro.
+- Para **Servicio**, el mismo espacio cambia a **Comprobante del servicio** y acepta una imagen o un PDF, como en las versiones anteriores.
+- La primera foto de un pendiente crea en Drive la carpeta `Casa en Orden - Fotos de pendientes`.
+- Las fotos de pendientes se habilitan mediante enlace para que se vean en los dos teléfonos. Evita fotografías privadas o sensibles.
 
 ## Cómo se actualiza la información
 
@@ -171,6 +186,9 @@ Si un teléfono tiene los avisos bloqueados, no puede recibir el evento mientras
 6. Crea un servicio recurrente de prueba, márcalo pagado y confirma que aparezca exactamente un siguiente vencimiento.
 7. Busca un producto del catálogo desde un tipo de pendiente distinto y confirma que también aparezca.
 8. Edita ese producto, toma una foto, guarda y verifica que la miniatura aparezca en ambos teléfonos.
+9. Abre **Nuevo pendiente** y confirma que no se muestre ninguna lista del catálogo hasta escribir en el buscador.
+10. Registra un artículo de despensa con **Tomar o elegir foto** y comprueba que aparezca en la tarjeta y en su detalle.
+11. Crea o edita un servicio y confirma que el selector siga aceptando comprobantes en imagen o PDF.
 
 ## Solución de problemas
 
@@ -201,6 +219,7 @@ El PIN se almacena como hash y no puede recuperarse. Para reiniciar el hogar, ca
 - Leer o modificar datos requiere el token privado creado para el hogar.
 - El secreto de envío permanece en las propiedades privadas de Apps Script.
 - Los datos siguen en tu Hoja de cálculo y los archivos en tu Drive.
+- Las fotos del catálogo y de pendientes usan enlaces no listados para poder mostrarse en ambos teléfonos; no deben contener información sensible.
 
 ## Requisitos
 
