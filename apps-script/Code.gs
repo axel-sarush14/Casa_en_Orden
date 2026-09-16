@@ -313,13 +313,13 @@ function saveCatalogEntry(payload, accessToken) {
     const entry = {
       id: data.id || createId_('CAT'),
       alias: data.alias,
-      category: data.category,
-      location: data.location,
-      name: data.name,
-      brand: data.brand,
-      model: data.model,
-      specification: data.specification,
-      presentation: data.presentation,
+      category: '',
+      location: '',
+      name: '',
+      brand: '',
+      model: '',
+      specification: data.description,
+      presentation: '',
       imageUrl: data.imageUrl,
       purchaseUrl: data.purchaseUrl,
       active: current ? current.active : true,
@@ -558,19 +558,19 @@ function normalizeItemPayload_(payload) {
 
 function normalizeCatalogPayload_(payload) {
   const alias = cleanText_(payload && payload.alias, 120);
-  const category = cleanText_(payload && payload.category, 30);
-  if (!alias) throw new Error('Escribe el nombre rápido del producto.');
-  if (!APP.TYPES.includes(category)) throw new Error('Elige una categoría válida para el catálogo.');
+  if (!alias) throw new Error('Escribe el nombre del producto.');
+  const legacyDescription = [
+    payload && payload.name,
+    payload && payload.brand,
+    payload && payload.model,
+    payload && payload.specification,
+    payload && payload.presentation,
+    payload && payload.location
+  ].map(value => cleanText_(value, 500)).filter(Boolean).join(' · ');
   return {
     id: cleanText_(payload && payload.id, 80),
     alias,
-    category,
-    location: cleanText_(payload && payload.location, 100),
-    name: cleanText_(payload && payload.name, 120),
-    brand: cleanText_(payload && payload.brand, 100),
-    model: cleanText_(payload && payload.model, 100),
-    specification: cleanText_(payload && payload.specification, 500),
-    presentation: cleanText_(payload && payload.presentation, 120),
+    description: cleanText_(payload && payload.description, 500) || cleanText_(legacyDescription, 500),
     imageUrl: cleanUrl_(payload && payload.imageUrl),
     purchaseUrl: cleanUrl_(payload && payload.purchaseUrl)
   };
@@ -660,8 +660,25 @@ function catalogFromRow_(row) {
 
 function publicCatalogEntry_(entry) {
   const copy = Object.assign({}, entry);
+  copy.description = catalogDescription_(entry);
   delete copy.updatedAtRaw;
   return copy;
+}
+
+function catalogDescription_(entry) {
+  const alias = cleanText_(entry && entry.alias, 120).toLowerCase();
+  const values = [
+    entry && entry.description,
+    entry && entry.name,
+    entry && entry.brand,
+    entry && entry.model,
+    entry && entry.specification,
+    entry && entry.presentation,
+    entry && entry.location ? `Ubicación: ${entry.location}` : ''
+  ].map(value => cleanText_(value, 500)).filter(value => value && value.toLowerCase() !== alias);
+  return values.filter((value, index) => values.findIndex(candidate => candidate.toLowerCase() === value.toLowerCase()) === index)
+    .join(' · ')
+    .slice(0, 500);
 }
 
 function findItemRow_(itemId) {

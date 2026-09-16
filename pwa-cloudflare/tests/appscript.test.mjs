@@ -6,8 +6,10 @@ import { fileURLToPath } from 'node:url';
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
 const codePath = `${projectRoot}apps-script/Code.gs`;
 const scriptsPath = `${projectRoot}apps-script/Scripts.html`;
+const indexPath = `${projectRoot}apps-script/Index.html`;
 const code = readFileSync(codePath, 'utf8');
 const scriptsHtml = readFileSync(scriptsPath, 'utf8');
+const indexHtml = readFileSync(indexPath, 'utf8');
 const scripts = scriptsHtml.match(/<script>([\s\S]*)<\/script>/)?.[1] || '';
 
 function loadAppsScriptHelpers() {
@@ -18,7 +20,7 @@ function loadAppsScriptHelpers() {
     }
   };
   const Session = { getScriptTimeZone: () => 'UTC' };
-  return new Function('Utilities', 'Session', `${code}; return { APP, nextRecurrenceDate_ };`)(Utilities, Session);
+  return new Function('Utilities', 'Session', `${code}; return { APP, nextRecurrenceDate_, normalizeCatalogPayload_, publicCatalogEntry_ };`)(Utilities, Session);
 }
 
 test('el código de Apps Script y el JavaScript de la interfaz tienen sintaxis válida', () => {
@@ -46,6 +48,29 @@ test('las fechas recurrentes respetan fin de mes y frecuencias personalizadas', 
   assert.equal(nextRecurrenceDate_('2024-02-29', 'Anual', ''), '2025-02-28');
   assert.equal(nextRecurrenceDate_('2025-01-15', 'Bimestral', ''), '2025-03-15');
   assert.equal(nextRecurrenceDate_('2025-01-01', 'Personalizada', 45), '2025-02-15');
+});
+
+test('el catálogo unifica registros antiguos en una sola descripción', () => {
+  const { normalizeCatalogPayload_, publicCatalogEntry_ } = loadAppsScriptHelpers();
+  const legacy = publicCatalogEntry_({
+    alias: 'Lámpara cocina', name: 'Lámpara LED', brand: 'Marca X', model: 'A20',
+    specification: '20 W · luz blanca', presentation: '1 pieza', location: 'Cocina'
+  });
+  assert.equal(legacy.description, 'Lámpara LED · Marca X · A20 · 20 W · luz blanca · 1 pieza · Ubicación: Cocina');
+  const simple = normalizeCatalogPayload_({ alias: 'Filtro de agua', description: 'Modelo ABC · 2 piezas' });
+  assert.equal(simple.alias, 'Filtro de agua');
+  assert.equal(simple.description, 'Modelo ABC · 2 piezas');
+});
+
+test('la búsqueda usa un solo catálogo sin depender de la categoría del pendiente', () => {
+  assert.match(indexHtml, /Nombre del producto/);
+  assert.match(indexHtml, /Descripción o referencia/);
+  assert.doesNotMatch(indexHtml, /id="catalogCategory"/);
+  assert.doesNotMatch(indexHtml, /id="catalogBrand"/);
+  assert.doesNotMatch(indexHtml, /id="catalogModel"/);
+  assert.doesNotMatch(scripts, /entry\.category === type/);
+  assert.doesNotMatch(scripts, /setRadio\('type', entry\.category\)/);
+  assert.match(scripts, /catalogSearchScore/);
 });
 
 test('la interfaz ya no consulta cada dos minutos', () => {

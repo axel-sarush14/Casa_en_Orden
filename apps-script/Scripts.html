@@ -88,8 +88,6 @@
     els.itemForm.addEventListener('submit', handleItemSubmit);
     els.itemForm.addEventListener('change', event => {
       if (event.target.name === 'type') {
-        const selected = findCatalogEntry($('#itemCatalogId').value);
-        if (selected && selected.category !== event.target.value) clearSelectedCatalog();
         updateConditionalFields();
       }
       if (event.target.name === 'serviceMode' || event.target.name === 'recurrence') updateConditionalFields();
@@ -314,10 +312,10 @@
   function renderCatalogList() {
     const entries = state.data.catalog || [];
     els.catalogList.innerHTML = entries.length ? entries.map(entry => {
-      const summary = catalogEntrySummary(entry) || `${entry.category}${entry.location ? ` · ${entry.location}` : ''}`;
+      const summary = catalogEntryDescription(entry) || 'Sin descripción';
       const thumb = entry.imageUrl
         ? `<span class="catalog-thumb"><img src="${escapeAttr(entry.imageUrl)}" alt="" loading="lazy"></span>`
-        : `<span class="catalog-thumb">${typeIcon(entry.category)}</span>`;
+        : '<span class="catalog-thumb">📦</span>';
       return `<button class="catalog-card ${entry.active ? '' : 'is-inactive'}" type="button" data-catalog-id="${escapeAttr(entry.id)}">
         ${thumb}<span class="catalog-card-copy"><strong>${escapeHtml(entry.alias)}</strong><small>${escapeHtml(summary)}</small></span>
         <span class="status-badge">${entry.active ? 'Activo' : 'Inactivo'}</span>
@@ -435,17 +433,20 @@
       return;
     }
     const query = normalizeText(els.catalogSearch.value);
-    const type = checkedValue('type');
-    const entries = (state.data.catalog || []).filter(entry => entry.active && entry.category === type && (
-      !query || normalizeText(`${entry.alias} ${entry.name} ${entry.brand} ${entry.model} ${entry.location} ${entry.specification}`).includes(query)
-    )).slice(0, 7);
+    const entries = (state.data.catalog || [])
+      .filter(entry => entry.active)
+      .map(entry => ({ entry, score: catalogSearchScore(entry, query) }))
+      .filter(result => result.score >= 0)
+      .sort((a, b) => b.score - a.score || String(a.entry.alias).localeCompare(String(b.entry.alias), 'es', { sensitivity: 'base' }))
+      .slice(0, 7)
+      .map(result => result.entry);
     if (!entries.length) {
       els.catalogSuggestions.hidden = true;
       els.catalogSuggestions.innerHTML = '';
       return;
     }
     els.catalogSuggestions.innerHTML = entries.map(entry => `<button class="catalog-suggestion" type="button" data-select-catalog="${escapeAttr(entry.id)}">
-      <span>${typeIcon(entry.category)}</span><span><strong>${escapeHtml(entry.alias)}</strong><small>${escapeHtml(catalogEntrySummary(entry) || entry.category)}</small></span>
+      <span>📦</span><span><strong>${escapeHtml(entry.alias)}</strong><small>${escapeHtml(catalogEntryDescription(entry) || 'Referencia del catálogo')}</small></span>
     </button>`).join('');
     els.catalogSuggestions.hidden = false;
   }
@@ -458,10 +459,9 @@
   }
 
   function applyCatalogEntry(entry) {
-    setRadio('type', entry.category);
     $('#itemCatalogId').value = entry.id;
     $('#itemTitle').value = entry.alias;
-    $('#itemDetail').value = catalogEntryDetail(entry);
+    $('#itemDetail').value = catalogEntryDescription(entry);
     $('#itemPortal').value = entry.purchaseUrl || '';
     showSelectedCatalog(entry);
     updateConditionalFields();
@@ -470,7 +470,7 @@
   function showSelectedCatalog(entry) {
     els.catalogSearch.value = entry.alias;
     els.catalogSuggestions.hidden = true;
-    els.selectedCatalog.innerHTML = `<span class="catalog-thumb">${typeIcon(entry.category)}</span><span><strong>${escapeHtml(entry.alias)}</strong><small>${escapeHtml(catalogEntrySummary(entry) || 'Datos del catálogo aplicados')}</small></span><button class="clear-catalog" type="button" data-clear-catalog aria-label="Quitar vínculo con el catálogo">×</button>`;
+    els.selectedCatalog.innerHTML = `<span class="catalog-thumb">📦</span><span><strong>${escapeHtml(entry.alias)}</strong><small>${escapeHtml(catalogEntryDescription(entry) || 'Datos del catálogo aplicados')}</small></span><button class="clear-catalog" type="button" data-clear-catalog aria-label="Quitar vínculo con el catálogo">×</button>`;
     els.selectedCatalog.hidden = false;
   }
 
@@ -569,13 +569,7 @@
     els.toggleCatalogButton.hidden = !entry;
     if (entry) {
       $('#catalogAlias').value = entry.alias || '';
-      $('#catalogCategory').value = entry.category || 'Despensa';
-      $('#catalogLocation').value = entry.location || '';
-      $('#catalogName').value = entry.name || '';
-      $('#catalogBrand').value = entry.brand || '';
-      $('#catalogModel').value = entry.model || '';
-      $('#catalogSpecification').value = entry.specification || '';
-      $('#catalogPresentation').value = entry.presentation || '';
+      $('#catalogDescription').value = catalogEntryDescription(entry);
       $('#catalogPurchaseUrl').value = entry.purchaseUrl || '';
       $('#catalogImageUrl').value = entry.imageUrl || '';
       els.toggleCatalogButton.textContent = entry.active ? 'Desactivar producto' : 'Volver a activar producto';
@@ -589,9 +583,7 @@
     event.preventDefault();
     const form = new FormData(els.catalogForm);
     const payload = {
-      id: form.get('id') || '', alias: form.get('alias'), category: form.get('category'),
-      location: form.get('location'), name: form.get('name'), brand: form.get('brand'),
-      model: form.get('model'), specification: form.get('specification'), presentation: form.get('presentation'),
+      id: form.get('id') || '', alias: form.get('alias'), description: form.get('description'),
       purchaseUrl: form.get('purchaseUrl'), imageUrl: form.get('imageUrl'), actor: state.actor
     };
     setBusy(els.saveCatalogButton, true);
@@ -938,13 +930,22 @@
 
   function findItem(id) { return state.data.items.find(item => item.id === id); }
   function findCatalogEntry(id) { return (state.data.catalog || []).find(entry => entry.id === id); }
-  function catalogEntrySummary(entry) {
-    return [entry.brand, entry.model, entry.specification, entry.presentation, entry.location ? `Para ${entry.location}` : '']
-      .filter(Boolean).join(' · ');
-  }
-  function catalogEntryDetail(entry) {
+  function catalogEntryDescription(entry) {
+    if (entry.description) return String(entry.description).slice(0, 500);
     const values = [entry.name, entry.brand, entry.model, entry.specification, entry.presentation, entry.location ? `Ubicación: ${entry.location}` : ''];
     return [...new Set(values.filter(Boolean))].join(' · ').slice(0, 500);
+  }
+  function catalogSearchScore(entry, query) {
+    if (!query) return 0;
+    const name = normalizeText(entry.alias);
+    const description = normalizeText(catalogEntryDescription(entry));
+    const searchable = `${name} ${description}`.trim();
+    const terms = query.split(/\s+/).filter(Boolean);
+    if (!terms.every(term => searchable.includes(term))) return -1;
+    if (name === query) return 1000;
+    if (name.startsWith(query)) return 800;
+    if (name.includes(query)) return 600;
+    return 300 + terms.reduce((score, term) => score + (name.includes(term) ? 20 : 5), 0);
   }
   function prioritySort(a, b) {
     if (a.priority !== b.priority) return a.priority === 'Urgente' ? -1 : 1;

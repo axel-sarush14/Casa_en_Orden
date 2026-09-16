@@ -173,7 +173,7 @@
             <div><p class="section-kicker">Datos precisos</p><h3 id="catalogHeading">Catálogo doméstico</h3></div>
             <button class="primary-small" type="button" data-open-catalog-form>Agregar</button>
           </div>
-          <p class="catalog-intro">Guarda modelos, medidas, tipo de luz y presentaciones para recuperarlos al crear un pendiente.</p>
+          <p class="catalog-intro">Guarda productos frecuentes con una descripción de referencia para encontrarlos desde cualquier tipo de pendiente.</p>
           <div id="catalogList" class="catalog-list"></div>
         </section>
       </section>
@@ -238,7 +238,7 @@
 
       <div id="catalogPicker" class="catalog-picker">
         <div class="field">
-          <label for="catalogSearch">Buscar en el catálogo <span>opcional</span></label>
+          <label for="catalogSearch">Buscar en todo el catálogo <span>opcional</span></label>
           <div class="catalog-search-wrap">
             <svg class="icon"><use href="#i-search"/></svg>
             <input id="catalogSearch" type="search" autocomplete="off" placeholder="Ej. Foco del cuarto">
@@ -347,45 +347,12 @@
     <form id="catalogForm" class="item-form">
       <input id="catalogId" name="id" type="hidden">
       <div class="field">
-        <label for="catalogAlias">Nombre rápido</label>
-        <input id="catalogAlias" name="alias" maxlength="120" placeholder="Ej. Foco del cuarto" required>
-      </div>
-      <div class="two-columns">
-        <div class="field">
-          <label for="catalogCategory">Categoría</label>
-          <select id="catalogCategory" name="category" required>
-            <option value="Despensa">Despensa</option>
-            <option value="Reparación">Reparación</option>
-            <option value="Servicio">Servicio</option>
-            <option value="Otro">Otro</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="catalogLocation">Ubicación <span>opcional</span></label>
-          <input id="catalogLocation" name="location" maxlength="100" placeholder="Ej. Recámara">
-        </div>
+        <label for="catalogAlias">Nombre del producto</label>
+        <input id="catalogAlias" name="alias" maxlength="120" placeholder="Ej. Lámpara de cocina" required>
       </div>
       <div class="field">
-        <label for="catalogName">Producto <span>opcional</span></label>
-        <input id="catalogName" name="name" maxlength="120" placeholder="Ej. Foco LED">
-      </div>
-      <div class="two-columns">
-        <div class="field">
-          <label for="catalogBrand">Marca <span>opcional</span></label>
-          <input id="catalogBrand" name="brand" maxlength="100" placeholder="Ej. Philips">
-        </div>
-        <div class="field">
-          <label for="catalogModel">Modelo <span>opcional</span></label>
-          <input id="catalogModel" name="model" maxlength="100" placeholder="Ej. A60">
-        </div>
-      </div>
-      <div class="field">
-        <label for="catalogSpecification">Especificaciones <span>opcional</span></label>
-        <textarea id="catalogSpecification" name="specification" maxlength="500" rows="3" placeholder="Ej. 9 W · E27 · 3000 K · luz cálida"></textarea>
-      </div>
-      <div class="field">
-        <label for="catalogPresentation">Presentación <span>opcional</span></label>
-        <input id="catalogPresentation" name="presentation" maxlength="120" placeholder="Ej. Paquete de 12 rollos">
+        <label for="catalogDescription">Descripción o referencia <span>opcional</span></label>
+        <textarea id="catalogDescription" name="description" maxlength="500" rows="4" placeholder="Ej. 20 W · 127 V · 22 cm · luz blanca LED"></textarea>
       </div>
       <div class="field">
         <label for="catalogPurchaseUrl">Enlace de compra <span>opcional</span></label>

@@ -1,6 +1,6 @@
-# Casa en Orden 4.0 — identidad por teléfono, NFC y catálogo
+# Casa en Orden 4.1 — catálogo unificado y formulario simplificado
 
-Esta versión parte del respaldo `Respaldo_AppsScript_Casa_en_Orden_20260911_000535.zip`. Conserva los pendientes existentes, la Hoja de cálculo y los comprobantes de Drive; la migración únicamente agrega columnas y crea la hoja `Catalogo`.
+Esta versión actualiza Casa en Orden 4.0 sin borrar pendientes, productos del catálogo, la Hoja de cálculo ni comprobantes de Drive. Los registros creados con el formulario anterior siguen funcionando y sus campos se reúnen automáticamente en una sola descripción.
 
 GitHub y Cloudflare publican la PWA y entregan Web Push directo. No usa Firebase ni requiere crear llaves manualmente.
 
@@ -14,7 +14,9 @@ GitHub y Cloudflare publican la PWA y entregan Web Push directo. No usa Firebase
 - Ya no consulta los datos cada dos minutos: actualiza al guardar, recibir un push, abrir o regresar a la app, y al tocar el botón de actualización.
 - Los servicios pueden ser de pago **Único** o **Recurrente**.
 - Al marcar como pagado un servicio recurrente, se genera una sola vez el siguiente vencimiento.
-- El catálogo doméstico guarda marcas, modelos, medidas, tipo de luz, presentación, enlaces e imágenes para autocompletar futuros pendientes.
+- El catálogo es único para toda la casa: busca coincidencias sin importar si el pendiente es de despensa, servicio, reparación u otro tipo.
+- El formulario del catálogo se reduce a nombre del producto, descripción o referencia, enlace de compra e imagen.
+- Los datos anteriores de producto, marca, modelo, especificaciones, presentación y ubicación se conservan y se muestran juntos en la descripción.
 
 ## Contenido del paquete
 
@@ -23,7 +25,7 @@ GitHub y Cloudflare publican la PWA y entregan Web Push directo. No usa Firebase
 | `apps-script/` | Código actualizado de Google Apps Script. |
 | `pwa-cloudflare/` | PWA y Worker que se publican desde GitHub en Cloudflare. |
 
-## Actualizar una instalación 3.0 existente
+## Actualizar una instalación 4.0 existente
 
 ### 1. Actualiza Apps Script
 
@@ -37,7 +39,7 @@ GitHub y Cloudflare publican la PWA y entregan Web Push directo. No usa Firebase
    - `appsscript.json`
 4. Guarda el proyecto.
 5. Regresa a la Hoja y recárgala.
-6. Usa **Casa en Orden → Configurar hojas**. Esto conserva las primeras 18 columnas y sus datos, agrega las columnas nuevas al final y crea `Catalogo`.
+6. Usa **Casa en Orden → Configurar hojas**. La operación conserva los pendientes y el catálogo existentes.
 7. Ve a **Implementar → Administrar implementaciones**, edita la Web App, selecciona **Nueva versión** y pulsa **Implementar**.
 8. Conserva la misma URL que termina en `/exec`.
 
@@ -125,15 +127,18 @@ Al crear un pendiente de tipo **Servicio**:
 
 Cuando un recurrente se marca como pagado, el pago actual conserva su comprobante e historial y la app crea el siguiente pendiente. La protección por `AnteriorID` impide generar el mismo siguiente pago dos veces.
 
-## Catálogo doméstico
+## Catálogo unificado
 
 1. Entra a **Perfil → Catálogo doméstico → Agregar**.
-2. Guarda un nombre rápido, por ejemplo `Foco del cuarto`.
-3. Añade lo que convenga: ubicación, marca, modelo, base, watts, temperatura de color, presentación, enlace o imagen.
-4. Al crear un pendiente, busca ese nombre en **Buscar en el catálogo**.
-5. La app completa el título, detalle técnico y enlace de compra; todavía puedes ajustarlos para ese pendiente.
+2. Escribe el **Nombre del producto**, por ejemplo `Lámpara de cocina`.
+3. En **Descripción o referencia** reúne solo lo que necesiten recordar, por ejemplo `20 W · 127 V · 22 cm · luz blanca LED`.
+4. Si conviene, añade el enlace de compra y la imagen.
+5. Al crear cualquier pendiente, busca palabras del nombre o la descripción en **Buscar en todo el catálogo**. No es necesario seleccionar antes la categoría correcta.
+6. La app ordena primero las coincidencias más cercanas y completa el título, el detalle y el enlace; todavía puedes ajustarlos para ese pendiente.
 
-Los productos pueden desactivarse sin borrarlos. Los pendientes anteriores conservan la información que tenían al momento de crearse.
+Elegir un producto del catálogo no cambia el tipo del pendiente: **Despensa**, **Servicio**, **Reparación** y **Otro** siguen sirviendo para organizar la lista. Los productos pueden desactivarse sin borrarlos y los pendientes anteriores conservan la información que tenían al momento de crearse.
+
+Los productos guardados en 4.0 no necesitan capturarse otra vez. Al abrirlos, la app combina automáticamente el producto, marca, modelo, especificaciones, presentación y ubicación anteriores en la nueva descripción. La hoja conserva las columnas antiguas internamente para mantener compatibilidad con los datos existentes.
 
 ## Cómo se actualiza la información
 
@@ -153,6 +158,7 @@ Si un teléfono tiene los avisos bloqueados, no puede recibir el evento mientras
 4. Solo los dispositivos de Lau deben recibir el cambio.
 5. Acerca ambos teléfonos al mismo tag NFC y verifica que cada uno muestre su propio saludo.
 6. Crea un servicio recurrente de prueba, márcalo pagado y confirma que aparezca exactamente un siguiente vencimiento.
+7. Busca un producto del catálogo desde un tipo de pendiente distinto y confirma que también aparezca.
 
 ## Solución de problemas
 

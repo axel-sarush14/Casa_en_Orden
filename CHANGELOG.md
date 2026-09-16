@@ -1,5 +1,14 @@
 # Historial de cambios
 
+## 4.1.0 — 2026-09-16
+
+- Unifica el catálogo para buscar en todos los productos sin filtrar por el tipo del pendiente.
+- Ordena los resultados por coincidencia del nombre y de las palabras de la descripción.
+- Simplifica el alta y la edición a nombre del producto, descripción o referencia, enlace de compra e imagen.
+- Evita que elegir un producto cambie la categoría seleccionada del pendiente.
+- Consolida los campos antiguos de producto, marca, modelo, especificaciones, presentación y ubicación en una descripción compatible.
+- Conserva los productos, pendientes, teléfonos vinculados, PIN y suscripciones de la versión 4.0.
+
 ## 4.0.0 — 2026-09-11
 
 - Fija por separado el dueño de cada teléfono como persona 1 o persona 2.
