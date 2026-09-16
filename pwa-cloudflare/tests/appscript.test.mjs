@@ -73,6 +73,18 @@ test('la búsqueda usa un solo catálogo sin depender de la categoría del pendi
   assert.match(scripts, /catalogSearchScore/);
 });
 
+test('el catálogo permite tomar o elegir una foto y la guarda en Drive', () => {
+  assert.match(indexHtml, /id="catalogImageFile"[^>]+type="file"[^>]+accept="image\/\*"/);
+  assert.doesNotMatch(indexHtml.match(/<input id="catalogImageFile"[^>]*>/)?.[0] || '', /\bcapture=/);
+  assert.match(indexHtml, /Tomar o elegir foto/);
+  assert.doesNotMatch(indexHtml, /URL de imagen/);
+  assert.match(scripts, /prepareCatalogImage/);
+  assert.match(scripts, /uploadCatalogImage/);
+  assert.match(code, /function uploadCatalogImage/);
+  assert.match(code, /CATALOG_IMAGE_FOLDER_ID/);
+  assert.match(code, /DriveApp\.Access\.ANYONE_WITH_LINK/);
+});
+
 test('la interfaz ya no consulta cada dos minutos', () => {
   assert.doesNotMatch(scripts, /setInterval\s*\(/);
   assert.doesNotMatch(scripts, /INTERVALO_ACTUALIZACION/);

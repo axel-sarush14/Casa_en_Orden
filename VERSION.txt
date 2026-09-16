@@ -1,4 +1,4 @@
-Casa en Orden 4.1.0
-Base: Casa_en_Orden_4.0_Identidad_NFC_Catalogo.zip
-SHA-256 de la base: 59cb3e4fd2d68f0e273cc6a63fe0675f9a42a208cf005936332ab706d2749bc3
+Casa en Orden 4.2.0
+Base: Casa_en_Orden_4.1_Catalogo_Unificado.zip
+SHA-256 de la base: c664423571f0603e3506ee2e445e8bd0e45a973f72e9536b6692e29d3647f466
 Generado: 2026-09-16

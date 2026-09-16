@@ -1,6 +1,6 @@
-# Casa en Orden 4.1 — catálogo unificado y formulario simplificado
+# Casa en Orden 4.2 — fotos desde cámara o galería
 
-Esta versión actualiza Casa en Orden 4.0 sin borrar pendientes, productos del catálogo, la Hoja de cálculo ni comprobantes de Drive. Los registros creados con el formulario anterior siguen funcionando y sus campos se reúnen automáticamente en una sola descripción.
+Esta versión actualiza Casa en Orden 4.1 sin borrar pendientes, productos del catálogo, fotos existentes, la Hoja de cálculo ni comprobantes de Drive. Ahora las fotos de los productos se pueden tomar con la cámara o seleccionar desde la galería del teléfono.
 
 GitHub y Cloudflare publican la PWA y entregan Web Push directo. No usa Firebase ni requiere crear llaves manualmente.
 
@@ -17,6 +17,9 @@ GitHub y Cloudflare publican la PWA y entregan Web Push directo. No usa Firebase
 - El catálogo es único para toda la casa: busca coincidencias sin importar si el pendiente es de despensa, servicio, reparación u otro tipo.
 - El formulario del catálogo se reduce a nombre del producto, descripción o referencia, enlace de compra e imagen.
 - Los datos anteriores de producto, marca, modelo, especificaciones, presentación y ubicación se conservan y se muestran juntos en la descripción.
+- El campo de URL de imagen se sustituye por **Tomar o elegir foto**.
+- La app muestra una vista previa y reduce automáticamente las fotos grandes antes de subirlas.
+- Las fotos se guardan en una carpeta de Drive y se muestran en el catálogo, los resultados de búsqueda y el producto seleccionado.
 
 ## Contenido del paquete
 
@@ -25,7 +28,7 @@ GitHub y Cloudflare publican la PWA y entregan Web Push directo. No usa Firebase
 | `apps-script/` | Código actualizado de Google Apps Script. |
 | `pwa-cloudflare/` | PWA y Worker que se publican desde GitHub en Cloudflare. |
 
-## Actualizar una instalación 4.0 existente
+## Actualizar una instalación 4.1 existente
 
 ### 1. Actualiza Apps Script
 
@@ -132,13 +135,21 @@ Cuando un recurrente se marca como pagado, el pago actual conserva su comprobant
 1. Entra a **Perfil → Catálogo doméstico → Agregar**.
 2. Escribe el **Nombre del producto**, por ejemplo `Lámpara de cocina`.
 3. En **Descripción o referencia** reúne solo lo que necesiten recordar, por ejemplo `20 W · 127 V · 22 cm · luz blanca LED`.
-4. Si conviene, añade el enlace de compra y la imagen.
+4. Si conviene, añade el enlace de compra y pulsa **Tomar o elegir foto**. Android permitirá abrir la cámara o escoger una imagen de la galería.
 5. Al crear cualquier pendiente, busca palabras del nombre o la descripción en **Buscar en todo el catálogo**. No es necesario seleccionar antes la categoría correcta.
 6. La app ordena primero las coincidencias más cercanas y completa el título, el detalle y el enlace; todavía puedes ajustarlos para ese pendiente.
 
 Elegir un producto del catálogo no cambia el tipo del pendiente: **Despensa**, **Servicio**, **Reparación** y **Otro** siguen sirviendo para organizar la lista. Los productos pueden desactivarse sin borrarlos y los pendientes anteriores conservan la información que tenían al momento de crearse.
 
 Los productos guardados en 4.0 no necesitan capturarse otra vez. Al abrirlos, la app combina automáticamente el producto, marca, modelo, especificaciones, presentación y ubicación anteriores en la nueva descripción. La hoja conserva las columnas antiguas internamente para mantener compatibilidad con los datos existentes.
+
+### Fotos del catálogo
+
+- No se solicita una URL: la foto se toma o se elige directamente desde el teléfono.
+- Antes de subirla, la app la convierte a JPG y limita su dimensión máxima para ahorrar espacio y datos móviles.
+- Al editar un producto, no elegir otra foto conserva la actual; **Quitar** elimina su vínculo del catálogo.
+- La primera carga crea automáticamente en Drive la carpeta `Casa en Orden - Fotos del catálogo`.
+- Cada imagen se habilita como visible mediante enlace para que pueda mostrarse en los dos teléfonos sin pedir inicio de sesión. El enlace es difícil de adivinar, pero no debe usarse para fotografías privadas o sensibles.
 
 ## Cómo se actualiza la información
 
@@ -159,6 +170,7 @@ Si un teléfono tiene los avisos bloqueados, no puede recibir el evento mientras
 5. Acerca ambos teléfonos al mismo tag NFC y verifica que cada uno muestre su propio saludo.
 6. Crea un servicio recurrente de prueba, márcalo pagado y confirma que aparezca exactamente un siguiente vencimiento.
 7. Busca un producto del catálogo desde un tipo de pendiente distinto y confirma que también aparezca.
+8. Edita ese producto, toma una foto, guarda y verifica que la miniatura aparezca en ambos teléfonos.
 
 ## Solución de problemas
 

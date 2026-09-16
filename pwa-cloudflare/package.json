@@ -1,6 +1,6 @@
 {
   "name": "casa-en-orden-pwa",
-  "version": "4.1.0",
+  "version": "4.2.0",
   "private": true,
   "type": "module",
   "description": "PWA instalable y puente Web Push para Casa en Orden, sin Firebase.",

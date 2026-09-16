@@ -22,6 +22,7 @@
     <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
     <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
     <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4m0 0L7 9m5-5 5 5"/><path d="M5 14v5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="4"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
     <symbol id="i-edit" viewBox="0 0 24 24"><path d="m14 5 5 5L9 20H4v-5zM13 6l5 5"/></symbol>
     <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></symbol>
@@ -358,9 +359,23 @@
         <label for="catalogPurchaseUrl">Enlace de compra <span>opcional</span></label>
         <input id="catalogPurchaseUrl" name="purchaseUrl" type="url" inputmode="url" placeholder="https://…">
       </div>
-      <div class="field">
-        <label for="catalogImageUrl">URL de imagen <span>opcional</span></label>
-        <input id="catalogImageUrl" name="imageUrl" type="url" inputmode="url" placeholder="https://…">
+      <div class="field catalog-photo-field">
+        <label for="catalogImageFile">Foto del producto <span>opcional</span></label>
+        <input id="catalogImageUrl" name="imageUrl" type="hidden">
+        <div id="catalogImagePreview" class="catalog-image-preview" hidden>
+          <img id="catalogImagePreviewImg" alt="Vista previa de la foto del producto">
+          <div class="catalog-image-copy">
+            <strong id="catalogImagePreviewName">Foto seleccionada</strong>
+            <small>Se guardará con este producto.</small>
+          </div>
+          <button id="removeCatalogImage" class="text-button catalog-image-remove" type="button">Quitar</button>
+        </div>
+        <label class="secondary-button catalog-photo-picker">
+          <svg class="icon"><use href="#i-camera"/></svg>
+          <span id="catalogImageLabel">Tomar o elegir foto</span>
+          <input id="catalogImageFile" type="file" accept="image/*">
+        </label>
+        <small class="catalog-photo-help">En el teléfono podrás abrir la cámara o elegir una imagen de la galería.</small>
       </div>
       <div class="form-actions catalog-form-actions">
         <button id="saveCatalogButton" class="primary-button" type="submit">Guardar en catálogo</button>

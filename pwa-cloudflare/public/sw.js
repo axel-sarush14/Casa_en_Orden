@@ -1,4 +1,4 @@
-const CACHE_NAME = 'casa-en-orden-shell-v4-1';
+const CACHE_NAME = 'casa-en-orden-shell-v4-2';
 const APP_SHELL = [
   '/',
   '/index.html',

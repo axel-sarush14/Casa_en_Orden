@@ -12,6 +12,9 @@
   let PWA_ACCESS_TOKEN = '';
   let PWA_DEVICE_ID = '';
   let PWA_DEVICE_OWNER = '';
+  let catalogImageDraft = null;
+  let catalogImagePreparing = false;
+  let catalogImageSelectionId = 0;
 
   const state = {
     data: { settings: {}, items: [], activity: [], catalog: [] },
@@ -41,6 +44,9 @@
     catalogList: $('#catalogList'), catalogSearch: $('#catalogSearch'), catalogSuggestions: $('#catalogSuggestions'),
     selectedCatalog: $('#selectedCatalog'), catalogFormSheet: $('#catalogFormSheet'), catalogForm: $('#catalogForm'),
     saveCatalogButton: $('#saveCatalogButton'), toggleCatalogButton: $('#toggleCatalogButton'),
+    catalogImageFile: $('#catalogImageFile'), catalogImagePreview: $('#catalogImagePreview'),
+    catalogImagePreviewImg: $('#catalogImagePreviewImg'), catalogImageLabel: $('#catalogImageLabel'),
+    removeCatalogImage: $('#removeCatalogImage'),
     detailSheet: $('#detailSheet'), detailContent: $('#detailContent'), settingsForm: $('#settingsForm'),
     confirmDialog: $('#confirmDialog'), confirmTitle: $('#confirmTitle'), confirmMessage: $('#confirmMessage'),
     confirmAccept: $('#confirmAccept'), confirmCancel: $('#confirmCancel')
@@ -106,6 +112,8 @@
       if (event.target.closest('[data-clear-catalog]')) clearSelectedCatalog();
     });
     els.catalogForm.addEventListener('submit', handleCatalogSubmit);
+    els.catalogImageFile.addEventListener('change', handleCatalogImageSelection);
+    els.removeCatalogImage.addEventListener('click', clearCatalogImage);
     els.toggleCatalogButton.addEventListener('click', handleCatalogToggle);
     els.actorOptions.addEventListener('click', handleActorChoice);
     els.detailContent.addEventListener('click', handleDetailClick);
@@ -313,9 +321,7 @@
     const entries = state.data.catalog || [];
     els.catalogList.innerHTML = entries.length ? entries.map(entry => {
       const summary = catalogEntryDescription(entry) || 'Sin descripción';
-      const thumb = entry.imageUrl
-        ? `<span class="catalog-thumb"><img src="${escapeAttr(entry.imageUrl)}" alt="" loading="lazy"></span>`
-        : '<span class="catalog-thumb">📦</span>';
+      const thumb = catalogThumbnail(entry);
       return `<button class="catalog-card ${entry.active ? '' : 'is-inactive'}" type="button" data-catalog-id="${escapeAttr(entry.id)}">
         ${thumb}<span class="catalog-card-copy"><strong>${escapeHtml(entry.alias)}</strong><small>${escapeHtml(summary)}</small></span>
         <span class="status-badge">${entry.active ? 'Activo' : 'Inactivo'}</span>
@@ -446,7 +452,7 @@
       return;
     }
     els.catalogSuggestions.innerHTML = entries.map(entry => `<button class="catalog-suggestion" type="button" data-select-catalog="${escapeAttr(entry.id)}">
-      <span>📦</span><span><strong>${escapeHtml(entry.alias)}</strong><small>${escapeHtml(catalogEntryDescription(entry) || 'Referencia del catálogo')}</small></span>
+      ${catalogThumbnail(entry)}<span><strong>${escapeHtml(entry.alias)}</strong><small>${escapeHtml(catalogEntryDescription(entry) || 'Referencia del catálogo')}</small></span>
     </button>`).join('');
     els.catalogSuggestions.hidden = false;
   }
@@ -470,7 +476,7 @@
   function showSelectedCatalog(entry) {
     els.catalogSearch.value = entry.alias;
     els.catalogSuggestions.hidden = true;
-    els.selectedCatalog.innerHTML = `<span class="catalog-thumb">📦</span><span><strong>${escapeHtml(entry.alias)}</strong><small>${escapeHtml(catalogEntryDescription(entry) || 'Datos del catálogo aplicados')}</small></span><button class="clear-catalog" type="button" data-clear-catalog aria-label="Quitar vínculo con el catálogo">×</button>`;
+    els.selectedCatalog.innerHTML = `${catalogThumbnail(entry)}<span><strong>${escapeHtml(entry.alias)}</strong><small>${escapeHtml(catalogEntryDescription(entry) || 'Datos del catálogo aplicados')}</small></span><button class="clear-catalog" type="button" data-clear-catalog aria-label="Quitar vínculo con el catálogo">×</button>`;
     els.selectedCatalog.hidden = false;
   }
 
@@ -563,7 +569,16 @@
 
   function openCatalogForm(entry = null) {
     els.catalogForm.reset();
+    catalogImageSelectionId += 1;
+    catalogImageDraft = null;
+    catalogImagePreparing = false;
+    els.catalogImageFile.value = '';
+    els.catalogImagePreview.hidden = true;
+    els.catalogImagePreviewImg.removeAttribute('src');
+    els.catalogImageLabel.textContent = 'Tomar o elegir foto';
+    els.saveCatalogButton.disabled = false;
     $('#catalogId').value = entry ? entry.id : '';
+    $('#catalogImageUrl').value = entry && entry.imageUrl || '';
     $('#catalogFormTitle').textContent = entry ? 'Editar producto' : 'Nuevo producto';
     els.saveCatalogButton.textContent = entry ? 'Guardar cambios' : 'Guardar en catálogo';
     els.toggleCatalogButton.hidden = !entry;
@@ -571,7 +586,7 @@
       $('#catalogAlias').value = entry.alias || '';
       $('#catalogDescription').value = catalogEntryDescription(entry);
       $('#catalogPurchaseUrl').value = entry.purchaseUrl || '';
-      $('#catalogImageUrl').value = entry.imageUrl || '';
+      if (entry.imageUrl) showCatalogImagePreview(entry.imageUrl, 'Foto actual');
       els.toggleCatalogButton.textContent = entry.active ? 'Desactivar producto' : 'Volver a activar producto';
       els.toggleCatalogButton.classList.toggle('danger-text', entry.active);
     }
@@ -581,6 +596,10 @@
 
   async function handleCatalogSubmit(event) {
     event.preventDefault();
+    if (catalogImagePreparing) {
+      toast('Espera un momento mientras preparamos la foto.');
+      return;
+    }
     const form = new FormData(els.catalogForm);
     const payload = {
       id: form.get('id') || '', alias: form.get('alias'), description: form.get('description'),
@@ -588,15 +607,73 @@
     };
     setBusy(els.saveCatalogButton, true);
     try {
-      await api('saveCatalogEntry', payload);
+      const result = await api('saveCatalogEntry', payload);
+      let imageError = '';
+      if (catalogImageDraft) {
+        try {
+          await api('uploadCatalogImage', {
+            catalogId: result.entry.id,
+            actor: state.actor,
+            filename: catalogImageDraft.filename,
+            dataUrl: catalogImageDraft.dataUrl
+          });
+        } catch (error) {
+          imageError = `El producto se guardó, pero la foto no: ${errorMessage(error)}`;
+        }
+      }
       closeSheets();
       toast(payload.id ? 'Producto del catálogo actualizado.' : 'Producto guardado en el catálogo.');
+      if (imageError) toast(imageError, 'error', 6500);
       await loadData();
     } catch (error) {
       toast(errorMessage(error), 'error', 6000);
     } finally {
       setBusy(els.saveCatalogButton, false);
     }
+  }
+
+  async function handleCatalogImageSelection(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+    const selectionId = ++catalogImageSelectionId;
+    catalogImagePreparing = true;
+    els.saveCatalogButton.disabled = true;
+    els.catalogImageLabel.textContent = 'Preparando foto…';
+    try {
+      const prepared = await prepareCatalogImage(file);
+      if (selectionId !== catalogImageSelectionId) return;
+      catalogImageDraft = prepared;
+      showCatalogImagePreview(prepared.dataUrl, prepared.filename);
+      els.catalogImageLabel.textContent = 'Cambiar foto';
+    } catch (error) {
+      if (selectionId !== catalogImageSelectionId) return;
+      event.target.value = '';
+      els.catalogImageLabel.textContent = els.catalogImagePreview.hidden ? 'Tomar o elegir foto' : 'Cambiar foto';
+      toast(errorMessage(error), 'error', 6000);
+    } finally {
+      if (selectionId !== catalogImageSelectionId) return;
+      catalogImagePreparing = false;
+      els.saveCatalogButton.disabled = false;
+    }
+  }
+
+  function showCatalogImagePreview(source, name) {
+    els.catalogImagePreviewImg.src = source;
+    $('#catalogImagePreviewName').textContent = name || 'Foto seleccionada';
+    els.catalogImagePreview.hidden = false;
+    els.catalogImageLabel.textContent = 'Cambiar foto';
+  }
+
+  function clearCatalogImage() {
+    catalogImageSelectionId += 1;
+    catalogImageDraft = null;
+    catalogImagePreparing = false;
+    els.saveCatalogButton.disabled = false;
+    els.catalogImageFile.value = '';
+    $('#catalogImageUrl').value = '';
+    els.catalogImagePreview.hidden = true;
+    els.catalogImagePreviewImg.removeAttribute('src');
+    els.catalogImageLabel.textContent = 'Tomar o elegir foto';
   }
 
   async function handleCatalogToggle() {
@@ -930,6 +1007,11 @@
 
   function findItem(id) { return state.data.items.find(item => item.id === id); }
   function findCatalogEntry(id) { return (state.data.catalog || []).find(entry => entry.id === id); }
+  function catalogThumbnail(entry) {
+    return entry && entry.imageUrl
+      ? `<span class="catalog-thumb"><img src="${escapeAttr(entry.imageUrl)}" alt="" loading="lazy"></span>`
+      : '<span class="catalog-thumb">📦</span>';
+  }
   function catalogEntryDescription(entry) {
     if (entry.description) return String(entry.description).slice(0, 500);
     const values = [entry.name, entry.brand, entry.model, entry.specification, entry.presentation, entry.location ? `Ubicación: ${entry.location}` : ''];
@@ -1003,6 +1085,69 @@
   function errorMessage(error) { return error && (error.message || error.toString()) || 'Ocurrió un error inesperado.'; }
   function readFile(file) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = () => reject(new Error('No pudimos leer el archivo.')); reader.readAsDataURL(file); }); }
 
+  async function prepareCatalogImage(file) {
+    if (file.type && !file.type.startsWith('image/')) throw new Error('Selecciona una imagen de la cámara o la galería.');
+    if (file.size > 30 * 1024 * 1024) throw new Error('La foto original es demasiado grande. Intenta tomarla con una resolución menor.');
+    const image = await loadLocalImage(file);
+    const attempts = [
+      { maxDimension: 1600, quality: .82 },
+      { maxDimension: 1280, quality: .76 },
+      { maxDimension: 1000, quality: .70 }
+    ];
+    for (const attempt of attempts) {
+      const blob = await renderCatalogImageBlob(image, attempt.maxDimension, attempt.quality);
+      if (blob.size <= 4 * 1024 * 1024) {
+        return {
+          dataUrl: await readFile(blob),
+          filename: catalogImageFilename(file.name),
+          size: blob.size
+        };
+      }
+    }
+    throw new Error('No pudimos reducir la foto lo suficiente. Elige otra imagen.');
+  }
+
+  function loadLocalImage(file) {
+    return new Promise((resolve, reject) => {
+      const source = URL.createObjectURL(file);
+      const image = new Image();
+      image.onload = () => { URL.revokeObjectURL(source); resolve(image); };
+      image.onerror = () => {
+        URL.revokeObjectURL(source);
+        reject(new Error('No pudimos abrir esa foto. Prueba con una imagen JPG, PNG o WEBP.'));
+      };
+      image.src = source;
+    });
+  }
+
+  function renderCatalogImageBlob(image, maxDimension, quality) {
+    const width = Number(image.naturalWidth || image.width);
+    const height = Number(image.naturalHeight || image.height);
+    if (!width || !height) return Promise.reject(new Error('La foto no tiene dimensiones válidas.'));
+    const scale = Math.min(1, maxDimension / Math.max(width, height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+    const context = canvas.getContext('2d');
+    context.fillStyle = '#fff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return new Promise((resolve, reject) => canvas.toBlob(
+      blob => blob ? resolve(blob) : reject(new Error('No pudimos preparar la foto.')),
+      'image/jpeg',
+      quality
+    ));
+  }
+
+  function catalogImageFilename(value) {
+    const base = String(value || 'foto-producto')
+      .replace(/\.[^.]+$/, '')
+      .replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ _-]/g, '_')
+      .trim()
+      .slice(0, 90) || 'foto-producto';
+    return `${base}.jpg`;
+  }
+
   function api(method, ...args) {
     if (DEMO_MODE) return demoApi(method, ...args);
     return new Promise((resolve, reject) => {
@@ -1052,6 +1197,10 @@
             if (entry) Object.assign(entry, payload, { updatedAt: now });
             else { entry = { ...payload, id:`CAT-${Math.random().toString(16).slice(2, 10).toUpperCase()}`, active:true, updatedAt:now }; data.catalog.push(entry); }
             saveDemo(data); return resolve({ ok:true, entry });
+          }
+          if (method === 'uploadCatalogImage') {
+            const payload = args[0]; const entry = data.catalog.find(current => current.id === payload.catalogId); if (!entry) throw new Error('El producto ya no existe en el catálogo.');
+            entry.imageUrl = payload.dataUrl; entry.updatedAt = new Date().toISOString(); saveDemo(data); return resolve({ ok:true, entry });
           }
           if (method === 'setCatalogEntryActive') {
             const [id, active] = args; const entry = data.catalog.find(current => current.id === id); if (!entry) throw new Error('El producto ya no existe en el catálogo.');

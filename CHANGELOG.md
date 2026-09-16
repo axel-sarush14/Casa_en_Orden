@@ -1,5 +1,15 @@
 # Historial de cambios
 
+## 4.2.0 — 2026-09-16
+
+- Sustituye la URL manual de imagen por un selector compatible con cámara y galería.
+- Muestra una vista previa y permite cambiar o quitar la foto antes de guardar.
+- Convierte y reduce las imágenes en el teléfono para agilizar la carga.
+- Guarda las fotos del catálogo en una carpeta específica de Drive.
+- Publica cada foto mediante un enlace no listado para que se vea en ambos dispositivos.
+- Usa la miniatura del producto en el catálogo, la búsqueda y la selección del pendiente.
+- Conserva las imágenes ya registradas y toda la configuración de la versión 4.1.
+
 ## 4.1.0 — 2026-09-16
 
 - Unifica el catálogo para buscar en todos los productos sin filtrar por el tipo del pendiente.

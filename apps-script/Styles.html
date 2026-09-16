@@ -316,6 +316,18 @@
   .recurrence-fields { display: grid; gap: 13px; }
   .compact-toggle { padding: 11px; border-radius: 13px; background: #fff; }
   .catalog-form-actions .text-button { justify-self: center; padding: 9px 12px; }
+  .catalog-photo-field { gap: 9px; }
+  .catalog-photo-picker { position: relative; width: 100%; overflow: hidden; border-style: dashed; }
+  .catalog-photo-picker input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .catalog-photo-help { color: var(--muted); font-size: 11px; line-height: 1.45; }
+  .catalog-image-preview { display: grid; grid-template-columns: 76px minmax(0, 1fr) auto; align-items: center; gap: 11px; padding: 10px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface-2); }
+  .catalog-image-preview[hidden] { display: none; }
+  .catalog-image-preview img { width: 76px; height: 76px; border-radius: 12px; background: #fff; object-fit: cover; }
+  .catalog-image-copy { min-width: 0; }
+  .catalog-image-copy strong, .catalog-image-copy small { display: block; }
+  .catalog-image-copy strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+  .catalog-image-copy small { margin-top: 4px; color: var(--muted); font-size: 10.5px; line-height: 1.35; }
+  .catalog-image-remove { padding: 7px; color: var(--clay-dark); font-size: 11px; }
   .form-actions { display: grid; gap: 10px; padding-top: 4px; }
   .form-actions small { display: flex; align-items: center; justify-content: center; gap: 5px; color: var(--muted); text-align: center; }
 

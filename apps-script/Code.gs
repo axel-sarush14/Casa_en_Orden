@@ -31,7 +31,8 @@ const APP = Object.freeze({
     'Semanal', 'Quincenal', 'Mensual', 'Bimestral', 'Trimestral',
     'Semestral', 'Anual', 'Personalizada'
   ]),
-  MAX_ATTACHMENT_BYTES: 5 * 1024 * 1024
+  MAX_ATTACHMENT_BYTES: 5 * 1024 * 1024,
+  MAX_CATALOG_IMAGE_BYTES: 4 * 1024 * 1024
 });
 
 /**
@@ -288,6 +289,7 @@ function saveSettings(payload, accessToken) {
     else sheet.appendRow([key, values[key]]);
   });
   shareReceiptFolder_();
+  shareCatalogImageFolder_();
   addActivity_('', 'Configuró', 'Actualizó la configuración del hogar', cleanText_(payload && payload.actor, 80) || 'Alguien');
   SpreadsheetApp.flush();
   return { ok: true, settings: getSettings_() };
@@ -331,6 +333,57 @@ function saveCatalogEntry(payload, accessToken) {
 
     const actor = cleanText_(payload && payload.actor, 80) || 'Alguien';
     addActivity_('', rowNumber ? 'Editó catálogo' : 'Agregó al catálogo', `${rowNumber ? 'Actualizó' : 'Agregó'} ${entry.alias} en el catálogo`, actor);
+    SpreadsheetApp.flush();
+    return { ok: true, entry: publicCatalogEntry_(catalogFromRow_(row)) };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function uploadCatalogImage(payload, accessToken) {
+  assertPwaAccess_(accessToken);
+  ensureSetup_();
+  const catalogId = cleanText_(payload && payload.catalogId, 80);
+  const actor = cleanText_(payload && payload.actor, 80) || 'Alguien';
+  const filename = sanitizeFilename_(payload && payload.filename || 'foto-producto.jpg');
+  const dataUrl = String(payload && payload.dataUrl || '');
+  if (!catalogId || !dataUrl) throw new Error('Selecciona una foto para guardar.');
+
+  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) throw new Error('La foto no tiene un formato válido.');
+  const mimeType = match[1].toLowerCase();
+  const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+  if (!allowed.includes(mimeType)) throw new Error('Usa una foto JPG, PNG o WEBP.');
+
+  const bytes = Utilities.base64Decode(match[2]);
+  if (bytes.length > APP.MAX_CATALOG_IMAGE_BYTES) {
+    throw new Error('La foto es demasiado grande. Intenta tomarla nuevamente o elige otra imagen.');
+  }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const sheet = getSheet_(APP.SHEETS.CATALOG);
+    const rowNumber = findCatalogRow_(catalogId);
+    if (!rowNumber) throw new Error('No encontramos el producto del catálogo.');
+    const entry = catalogFromRow_(sheet.getRange(rowNumber, 1, 1, APP.CATALOG_HEADERS.length).getValues()[0]);
+
+    const folder = getCatalogImageFolder_();
+    const finalName = `${entry.id}-${Date.now()}-${filename}`;
+    const file = folder.createFile(Utilities.newBlob(bytes, mimeType, finalName));
+    try {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch (error) {
+      try { file.setTrashed(true); } catch (cleanupError) { console.warn(cleanupError); }
+      throw new Error('No pudimos habilitar la foto para verla en ambos teléfonos.');
+    }
+
+    entry.imageUrl = `https://drive.google.com/thumbnail?id=${file.getId()}&sz=w1200`;
+    entry.updatedAt = new Date();
+    entry.updatedAtRaw = entry.updatedAt;
+    const row = catalogToRow_(entry);
+    sheet.getRange(rowNumber, 1, 1, row.length).setValues([row]);
+    addActivity_('', 'Actualizó foto', `Actualizó la foto de ${entry.alias}`, actor);
     SpreadsheetApp.flush();
     return { ok: true, entry: publicCatalogEntry_(catalogFromRow_(row)) };
   } finally {
@@ -976,6 +1029,31 @@ function getReceiptFolder_() {
 function shareReceiptFolder_(folder) {
   const target = folder || (() => {
     const folderId = PropertiesService.getScriptProperties().getProperty('RECEIPT_FOLDER_ID');
+    if (!folderId) return null;
+    try { return DriveApp.getFolderById(folderId); } catch (error) { return null; }
+  })();
+  if (!target) return;
+  const settings = getSettings_();
+  [settings.person1Email, settings.person2Email].filter(Boolean).forEach(email => {
+    try { target.addViewer(email); } catch (error) { console.warn(`No se pudo compartir con ${email}: ${error.message}`); }
+  });
+}
+
+function getCatalogImageFolder_() {
+  const properties = PropertiesService.getScriptProperties();
+  const folderId = properties.getProperty('CATALOG_IMAGE_FOLDER_ID');
+  if (folderId) {
+    try { return DriveApp.getFolderById(folderId); } catch (error) { console.warn(error); }
+  }
+  const folder = DriveApp.createFolder('Casa en Orden - Fotos del catálogo');
+  properties.setProperty('CATALOG_IMAGE_FOLDER_ID', folder.getId());
+  shareCatalogImageFolder_(folder);
+  return folder;
+}
+
+function shareCatalogImageFolder_(folder) {
+  const target = folder || (() => {
+    const folderId = PropertiesService.getScriptProperties().getProperty('CATALOG_IMAGE_FOLDER_ID');
     if (!folderId) return null;
     try { return DriveApp.getFolderById(folderId); } catch (error) { return null; }
   })();
