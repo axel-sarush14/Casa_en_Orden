@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Casa en Orden">
-  <rect width="512" height="512" fill="#48654b"/>
-  <path d="M126 248 256 137l130 111v121c0 13-10 23-23 23H149c-13 0-23-10-23-23V248Z" fill="#fff" stroke="#fff" stroke-width="25" stroke-linejoin="round"/>
-  <path d="M205 391v-95h69" fill="none" stroke="#48654b" stroke-width="27" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="m261 324 36 36 72-79" fill="none" stroke="#d8793f" stroke-width="31" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>
