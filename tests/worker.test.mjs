@@ -162,3 +162,41 @@ test('crea el hogar, protege la URL y reutiliza sus secretos', async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test('genera una imagen de catálogo solo para un teléfono vinculado', async () => {
+  const storage = new MemoryStorage();
+  await storage.put('devices', {
+    'device-1': {
+      actor: 'Axel',
+      ownerRole: 'person1',
+      deviceSecret: 'secret-device-1',
+      subscription: null
+    }
+  });
+  const calls = [];
+  const AI = {
+    async run(model, input) {
+      calls.push({ model, input });
+      return { image: Buffer.from('fake-jpeg-image').toString('base64') };
+    }
+  };
+  const registry = new HomeRegistry({ storage }, { AI });
+
+  const unauthorized = await registry.fetch(jsonRequest('/api/catalog-image', {
+    name: 'Papaya', deviceId: 'device-1', deviceSecret: 'incorrecto'
+  }));
+  assert.equal(unauthorized.status, 401);
+
+  const response = await registry.fetch(jsonRequest('/api/catalog-image', {
+    name: 'Papaya', deviceId: 'device-1', deviceSecret: 'secret-device-1'
+  }));
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.match(body.dataUrl, /^data:image\/jpeg;base64,/);
+  assert.equal(body.filename, 'imagen-papaya.jpg');
+  assert.equal(calls[0].model, '@cf/black-forest-labs/flux-1-schnell');
+  assert.match(calls[0].input.prompt, /Papaya/);
+  assert.match(calls[0].input.prompt, /no logos/i);
+  assert.equal((await storage.get('ai-usage:device-1')).count, 1);
+});

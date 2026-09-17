@@ -42,6 +42,7 @@ export class HomeRegistry {
       if (request.method === 'POST' && url.pathname === '/api/register') return await this.register(request);
       if (request.method === 'POST' && url.pathname === '/api/notify') return await this.notify(request);
       if (request.method === 'POST' && url.pathname === '/api/test') return await this.testNotification(request);
+      if (request.method === 'POST' && url.pathname === '/api/catalog-image') return await this.catalogImage(request);
       return json({ ok: false, error: 'Ruta no encontrada.', code: 'NOT_FOUND' }, 404);
     } catch (error) {
       if (error instanceof ApiError) {
@@ -55,7 +56,7 @@ export class HomeRegistry {
   async health() {
     const claimed = Boolean(await this.ctx.storage.get('pinHash'));
     const devices = (await this.ctx.storage.get('devices')) || {};
-    return json({ ok: true, claimed, devices: Object.keys(devices).length, version: '4.3.3' });
+    return json({ ok: true, claimed, devices: Object.keys(devices).length, version: '5.0.0' });
   }
 
   async config() {
@@ -71,7 +72,7 @@ export class HomeRegistry {
       hasAppUrl: Boolean(appUrl),
       vapidPublicKey: vapid.publicKey,
       people: publicPeople(devices || {}),
-      version: '4.3.3'
+      version: '5.0.0'
     });
   }
 
@@ -146,7 +147,7 @@ export class HomeRegistry {
 
   async bridgeStatus(request) {
     await this.requireBridge(request);
-    return json({ ok: true, app: 'casa-en-orden', version: '4.3.3' });
+    return json({ ok: true, app: 'casa-en-orden', version: '5.0.0' });
   }
 
   async notify(request) {
@@ -232,6 +233,65 @@ export class HomeRegistry {
       signal: AbortSignal.timeout(10000)
     });
     return json({ ok: true });
+  }
+
+  async catalogImage(request) {
+    assertSameOrigin(request);
+    const body = await readJson(request);
+    const devices = (await this.ctx.storage.get('devices')) || {};
+    const device = authenticateDevice(devices, body.deviceId, body.deviceSecret);
+    if (!device) throw new ApiError(401, 'Este teléfono no está vinculado al hogar.', 'DEVICE_UNAUTHORIZED');
+    if (!this.env.AI || typeof this.env.AI.run !== 'function') {
+      throw new ApiError(503, 'La generación automática todavía no está activada en Cloudflare.', 'AI_NOT_CONFIGURED');
+    }
+
+    const name = cleanProductName(body.name);
+    const deviceId = String(body.deviceId);
+    const day = new Date().toISOString().slice(0, 10);
+    const usageKey = `ai-usage:${deviceId}`;
+    const lastKey = `ai-last:${deviceId}`;
+    const [storedUsage, lastRequest] = await Promise.all([
+      this.ctx.storage.get(usageKey),
+      this.ctx.storage.get(lastKey)
+    ]);
+    const usage = storedUsage && storedUsage.day === day ? storedUsage : { day, count: 0 };
+    const now = Date.now();
+    if (Number(lastRequest || 0) > now - 2500) {
+      throw new ApiError(429, 'Espera unos segundos antes de crear otra imagen.', 'AI_COOLDOWN');
+    }
+    if (Number(usage.count || 0) >= 30) {
+      throw new ApiError(429, 'Este teléfono llegó al límite diario de imágenes automáticas. Puedes agregar una foto real.', 'AI_DAILY_LIMIT');
+    }
+    await this.ctx.storage.put(lastKey, now);
+
+    const prompt = [
+      `Clean product catalog photograph of one generic item described as: "${name}".`,
+      'Centered object, isolated on a pure white background, soft studio lighting, realistic proportions, square composition.',
+      'No people, no hands, no text, no letters, no price labels, no logos, no trademarks, no watermark.'
+    ].join(' ');
+    let result;
+    try {
+      result = await this.env.AI.run('@cf/black-forest-labs/flux-1-schnell', {
+        prompt,
+        steps: 4,
+        seed: Math.floor(Math.random() * 1000000000)
+      });
+    } catch (error) {
+      console.error('Workers AI no pudo generar una imagen.', error);
+      throw new ApiError(502, 'No pudimos crear la imagen en este momento. Intenta nuevamente o usa una foto.', 'AI_GENERATION_FAILED');
+    }
+
+    const image = String(result && result.image || '').replace(/\s+/g, '');
+    if (!image || !/^[A-Za-z0-9+/=]+$/.test(image) || image.length > 6 * 1024 * 1024) {
+      throw new ApiError(502, 'Cloudflare devolvió una imagen inesperada. Usa una foto por ahora.', 'AI_RESPONSE_INVALID');
+    }
+    await this.ctx.storage.put(usageKey, { day, count: Number(usage.count || 0) + 1 });
+    return json({
+      ok: true,
+      dataUrl: `data:image/jpeg;base64,${image}`,
+      filename: `imagen-${productSlug(name)}.jpg`,
+      source: 'workers-ai'
+    });
   }
 
   async requirePin(request, value) {
@@ -321,6 +381,27 @@ function authenticateDevice(devices, deviceId, deviceSecret) {
   const secret = String(deviceSecret || '');
   const device = id && devices[id];
   return device && safeEqual(device.deviceSecret, secret) ? device : null;
+}
+
+function cleanProductName(value) {
+  const name = String(value || '')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80);
+  if (name.length < 2) throw new ApiError(400, 'Escribe un nombre de producto válido.', 'PRODUCT_NAME_INVALID');
+  return name;
+}
+
+function productSlug(value) {
+  return String(value || 'producto')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 48) || 'producto';
 }
 
 function assertSameOrigin(request) {

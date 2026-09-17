@@ -546,6 +546,10 @@ function handleFrameMessage(event) {
   if (!event.data || typeof event.data !== 'object' || event.data.channel !== state.frameChannel) return;
   const data = event.data;
   state.frameMessenger = event.source;
+  if (data.type === 'casa-en-orden:generate-product-image') {
+    generateProductImageForFrame(data);
+    return;
+  }
   if (data.type === 'casa-en-orden:state') {
     state.frameReady = true;
     if (Array.isArray(data.people) && data.people.length) {
@@ -592,6 +596,37 @@ function handleFrameMessage(event) {
   }
   if (data.type === 'casa-en-orden:open-notification-settings') {
     showSetup('repair');
+  }
+}
+
+async function generateProductImageForFrame(data) {
+  const requestId = String(data.requestId || '');
+  if (!requestId) return;
+  try {
+    if (!state.device) throw localError('Este teléfono debe estar vinculado antes de crear imágenes.');
+    const result = await api('/api/catalog-image', {
+      method: 'POST',
+      timeoutMs: 45000,
+      body: {
+        name: String(data.name || ''),
+        deviceId: state.device.id,
+        deviceSecret: state.device.secret
+      }
+    });
+    postToFrame({
+      type: 'casa-en-orden:product-image-result',
+      requestId,
+      ok: true,
+      dataUrl: result.dataUrl,
+      filename: result.filename
+    });
+  } catch (error) {
+    postToFrame({
+      type: 'casa-en-orden:product-image-result',
+      requestId,
+      ok: false,
+      error: errorMessage(error)
+    });
   }
 }
 

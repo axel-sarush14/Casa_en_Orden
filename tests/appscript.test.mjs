@@ -29,6 +29,13 @@ test('el código de Apps Script y el JavaScript de la interfaz tienen sintaxis v
   assert.doesNotThrow(() => new Function(scripts));
 });
 
+test('Apps Script no trunca el JavaScript al configurar archivos de imagen', () => {
+  assert.equal(scripts.includes('/*'), false, 'El bloque incluido no debe contener slash-asterisco literal.');
+  assert.match(scripts, /const IMAGE_ACCEPT = 'image\/' \+ '\*';/);
+  assert.match(scripts, /`\$\{IMAGE_ACCEPT\},application\/pdf`/);
+  assert.match(scripts, /accept="\$\{IMAGE_ACCEPT\},application\/pdf"/);
+});
+
 test('la migración conserva las 18 columnas originales y agrega recurrencia y catálogo', () => {
   const { APP } = loadAppsScriptHelpers();
   assert.deepEqual(APP.ITEM_HEADERS.slice(0, 18), [
@@ -86,14 +93,32 @@ test('el catálogo permite tomar o elegir una foto y la guarda en Drive', () => 
   assert.match(code, /DriveApp\.Access\.ANYONE_WITH_LINK/);
 });
 
-test('el catálogo del nuevo pendiente permanece contraído hasta escribir una búsqueda', () => {
-  const start = scripts.indexOf('function renderCatalogSuggestions()');
-  const end = scripts.indexOf('function handleCatalogSuggestion', start);
+test('el alta de pendientes abre un catálogo visual, buscable y de selección múltiple', () => {
+  const start = scripts.indexOf('function renderCatalogVisualGrid()');
+  const end = scripts.indexOf('function catalogPickCard', start);
   const renderer = scripts.slice(start, end);
   assert.ok(start >= 0 && end > start);
   assert.match(renderer, /const query = normalizeText\(els\.catalogSearch\.value\);/);
-  assert.match(renderer, /if \(!query\) \{[\s\S]*?catalogSuggestions\.hidden = true;[\s\S]*?catalogSuggestions\.innerHTML = '';[\s\S]*?return;/);
-  assert.match(renderer, /\.slice\(0, 7\)/);
+  assert.match(renderer, /\.filter\(entry => entry\.active\)/);
+  assert.match(renderer, /\.slice\(0, 60\)/);
+  assert.match(indexHtml, /id="catalogVisualGrid"/);
+  assert.match(indexHtml, /Toca uno o varios y ajusta la cantidad/);
+  assert.match(scripts, /function handleCatalogBatchSubmit/);
+  assert.match(scripts, /api\('saveCatalogItems'/);
+  assert.match(code, /function saveCatalogItems/);
+  assert.match(code, /Puedes agregar hasta 25 productos a la vez/);
+});
+
+test('los productos nuevos se guardan en el catálogo y admiten imagen automática o foto real', () => {
+  assert.match(indexHtml, /Guardar también en catálogo/);
+  assert.match(indexHtml, /id="generateItemImageButton"/);
+  assert.match(indexHtml, /id="generateCatalogImageButton"/);
+  assert.match(scripts, /function isAutomaticImageCandidate/);
+  assert.match(scripts, /papaya/);
+  assert.match(scripts, /casa-en-orden:generate-product-image/);
+  assert.match(scripts, /casa-en-orden:product-image-result/);
+  assert.match(scripts, /Imagen automática ilustrativa/);
+  assert.match(scripts, /form\.get\('saveToCatalog'\) === 'on'/);
 });
 
 test('un pendiente permite tomar una foto y la muestra como producto sin alterar comprobantes de servicios', () => {
@@ -120,10 +145,12 @@ test('el arranque detecta archivos de interfaz mezclados y nunca deja un cargado
     'itemAttachmentTitle', 'itemRemoveAttachment', 'itemAttachmentPreview',
     'itemAttachmentPreviewImg', 'itemAttachmentFileIcon', 'itemAttachmentPreviewName',
     'itemAttachmentPreviewNote', 'removeItemAttachment', 'itemAttachmentIconUse',
-    'itemAttachmentHelp'
+    'itemAttachmentHelp', 'itemModeTabs', 'catalogModePanel', 'newItemPanel',
+    'catalogVisualGrid', 'catalogSelectionBar', 'addCatalogSelectionButton',
+    'saveItemToCatalog', 'generateItemImageButton', 'generateCatalogImageButton'
   ];
   requiredIds.forEach(id => assert.match(indexHtml, new RegExp(`id="${id}"`)));
-  assert.match(scripts, /const UI_REVISION = '4\.3\.3'/);
+  assert.match(scripts, /const UI_REVISION = '5\.0\.0'/);
   assert.match(scripts, /function assertUiCompatibility\(\)/);
   assert.match(scripts, /Los archivos de Apps Script no son de la misma versión/);
   assert.match(scripts, /function failStartup\(message\)/);
