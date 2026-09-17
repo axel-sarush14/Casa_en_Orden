@@ -27,10 +27,12 @@ test('todos los archivos precargados por el service worker existen', () => {
   });
 });
 
-test('el JavaScript principal se consulta en red antes de usar la copia antigua', () => {
+test('la pantalla y el JavaScript abren desde la copia instalada y se actualizan detrás', () => {
   const source = readFileSync(`${publicRoot}sw.js`, 'utf8');
   assert.match(source, /\['\/app\.js', '\/app\.css', '\/manifest\.webmanifest'\]\.includes\(url\.pathname\)/);
-  assert.match(source, /includes\(url\.pathname\)[\s\S]*?event\.respondWith\(fetch\(request\)/);
+  assert.match(source, /request\.mode === 'navigate'[\s\S]*?caches\.match\('\/index\.html'\)/);
+  assert.match(source, /includes\(url\.pathname\)[\s\S]*?caches\.match\(request, \{ ignoreSearch: true \}\)/);
+  assert.match(source, /event\.waitUntil\(fresh\.catch/);
 });
 
 test('la página carga el manifiesto, el service worker y una política de contenido', () => {
@@ -38,8 +40,8 @@ test('la página carga el manifiesto, el service worker y una política de conte
   const app = readFileSync(`${publicRoot}app.js`, 'utf8');
   assert.match(html, /rel="manifest"/);
   assert.match(html, /Content-Security-Policy/);
-  assert.match(html, /\/app\.js\?v=4\.3\.2/);
-  assert.match(html, /\/app\.css\?v=4\.3\.2/);
+  assert.match(html, /\/app\.js\?v=4\.3\.3/);
+  assert.match(html, /\/app\.css\?v=4\.3\.3/);
   assert.match(app, /registerServiceWorker/);
   assert.match(app, /configure-push-bridge/);
 });
@@ -60,6 +62,18 @@ test('el acceso NFC usa la identidad fija del teléfono y ofrece el alta rápida
   assert.match(app, /ownerRole/);
   assert.match(app, /LAUNCH_PARAMS\.get\('modo'\) === 'nfc'/);
   assert.match(app, /casa-en-orden:open-new-item/);
+  assert.match(app, /primeCachedSession\(\)/);
+  assert.ok(app.indexOf('if (state.quickMode && state.device) showQuickView()') < app.indexOf("api('/api/config')"));
+  assert.match(app, /Promise\.all\(\[\s*api\('\/api\/config'\),\s*state\.device \? restoreDevice\(\)/);
+  assert.match(app, /data\.type === 'casa-en-orden:shell-ready'[\s\S]*?dispatchPendingFrameAction\(\)/);
+  assert.match(app, /people: state\.config\?\.people \|\| \[\]/);
+});
+
+test('las llamadas de Cloudflare tienen un límite y nunca dejan el acceso rápido esperando indefinidamente', () => {
+  const app = readFileSync(`${publicRoot}app.js`, 'utf8');
+  assert.match(app, /const controller = new AbortController\(\)/);
+  assert.match(app, /controller\.abort\(\)/);
+  assert.match(app, /La conexión está tardando demasiado/);
 });
 
 test('la sincronización es por eventos y no por temporizador periódico', () => {

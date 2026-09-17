@@ -1,4 +1,4 @@
-# PWA de Casa en Orden 4.3.2
+# PWA de Casa en Orden 4.3.3
 
 Esta carpeta es la raíz del proyecto de Cloudflare.
 
@@ -14,9 +14,9 @@ Para publicar manualmente:
 npm run deploy
 ```
 
-En la conexión de GitHub con Cloudflare usa:
+Si subes **el contenido de esta carpeta** a la raíz de GitHub, como en el repositorio actual, usa:
 
-- **Root directory:** `pwa-cloudflare`
+- **Root directory:** `/`
 - **Build command:** vacío
 - **Deploy command:** `npx wrangler deploy`
 

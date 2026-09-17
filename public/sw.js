@@ -1,4 +1,4 @@
-const CACHE_NAME = 'casa-en-orden-shell-v4-3-2';
+const CACHE_NAME = 'casa-en-orden-shell-v4-3-3';
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -29,23 +29,22 @@ self.addEventListener('fetch', event => {
   if (request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
 
   if (request.mode === 'navigate') {
-    event.respondWith(fetch(request)
-      .then(response => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put('/index.html', copy));
-        return response;
-      })
-      .catch(() => caches.match('/index.html')));
+    const fresh = fetch(request).then(response => {
+      if (response.ok) caches.open(CACHE_NAME).then(cache => cache.put('/index.html', response.clone()));
+      return response;
+    });
+    event.waitUntil(fresh.catch(() => undefined));
+    event.respondWith(caches.match('/index.html').then(cached => cached || fresh));
     return;
   }
 
   if (['/app.js', '/app.css', '/manifest.webmanifest'].includes(url.pathname)) {
-    event.respondWith(fetch(request)
-      .then(response => {
-        if (response.ok) caches.open(CACHE_NAME).then(cache => cache.put(request, response.clone()));
-        return response;
-      })
-      .catch(() => caches.match(request)));
+    const fresh = fetch(request).then(response => {
+      if (response.ok) caches.open(CACHE_NAME).then(cache => cache.put(request, response.clone()));
+      return response;
+    });
+    event.waitUntil(fresh.catch(() => undefined));
+    event.respondWith(caches.match(request, { ignoreSearch: true }).then(cached => cached || fresh));
     return;
   }
 

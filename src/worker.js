@@ -1,5 +1,3 @@
-// Activar  desplie gue automático de Cloudflare
-
 import { generateVAPIDKeys, sendNotification } from 'web-push-neo';
 import {
   ApiError,
@@ -57,7 +55,7 @@ export class HomeRegistry {
   async health() {
     const claimed = Boolean(await this.ctx.storage.get('pinHash'));
     const devices = (await this.ctx.storage.get('devices')) || {};
-    return json({ ok: true, claimed, devices: Object.keys(devices).length, version: '4.3.2' });
+    return json({ ok: true, claimed, devices: Object.keys(devices).length, version: '4.3.3' });
   }
 
   async config() {
@@ -73,7 +71,7 @@ export class HomeRegistry {
       hasAppUrl: Boolean(appUrl),
       vapidPublicKey: vapid.publicKey,
       people: publicPeople(devices || {}),
-      version: '4.3.2'
+      version: '4.3.3'
     });
   }
 
@@ -81,9 +79,12 @@ export class HomeRegistry {
     assertSameOrigin(request);
     const body = await readJson(request);
     const actor = normalizeActor(body.actor);
-    const subscription = normalizeSubscription(body.subscription, { optional: true });
     const devices = (await this.ctx.storage.get('devices')) || {};
     const knownDevice = authenticateDevice(devices, body.deviceId, body.deviceSecret);
+    const subscriptionWasSent = Object.prototype.hasOwnProperty.call(body, 'subscription');
+    const subscription = subscriptionWasSent
+      ? normalizeSubscription(body.subscription, { optional: true })
+      : knownDevice?.subscription || null;
     const ownerRole = body.ownerRole
       ? normalizeOwnerRole(body.ownerRole)
       : knownDevice?.ownerRole || inferOwnerRole(actor);
@@ -145,7 +146,7 @@ export class HomeRegistry {
 
   async bridgeStatus(request) {
     await this.requireBridge(request);
-    return json({ ok: true, app: 'casa-en-orden', version: '4.3.2' });
+    return json({ ok: true, app: 'casa-en-orden', version: '4.3.3' });
   }
 
   async notify(request) {

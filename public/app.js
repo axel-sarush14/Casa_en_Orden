@@ -27,7 +27,9 @@ const state = {
   setupMode: 'claim',
   pendingSetup: null,
   bridgeWaiters: [],
-  ownerSyncing: false
+  ownerSyncing: false,
+  sessionReady: false,
+  pendingOpenOptions: null
 };
 
 const els = {
@@ -87,9 +89,30 @@ document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
   bindEvents();
+  primeCachedSession();
+  if (state.quickMode && state.device) showQuickView();
+
+  const registrationPromise = registerServiceWorker()
+    .then(registration => {
+      state.registration = registration;
+      return registration;
+    })
+    .catch(error => {
+      console.warn('El service worker todavía no está listo.', error);
+      return null;
+    });
+
   try {
-    state.registration = await registerServiceWorker();
-    state.config = await api('/api/config');
+    if (state.device) {
+      state.actor = state.device.actor || state.actor || 'Axel';
+      state.ownerRole = state.device.ownerRole || state.ownerRole || roleForActor(state.actor);
+    }
+
+    const [remoteConfig, restored] = await Promise.all([
+      api('/api/config'),
+      state.device ? restoreDevice() : Promise.resolve(null)
+    ]);
+    state.config = { ...(state.config || {}), ...remoteConfig };
     renderPeople(state.config.people);
 
     if (!state.config.claimed) {
@@ -102,14 +125,13 @@ async function init() {
       return;
     }
 
-    state.actor = state.device.actor || state.config.people[0] || 'Axel';
-    state.ownerRole = state.device.ownerRole || roleForActor(state.actor, state.config.people);
-    const restored = await restoreDevice();
     if (!restored) {
       clearStoredDevice();
       showSetup('join');
       return;
     }
+    acceptRegistration(restored);
+    state.sessionReady = true;
 
     if (!('Notification' in window) || Notification.permission === 'denied' || !restored.notificationsActive) {
       showSetup('repair');
@@ -120,9 +142,15 @@ async function init() {
     state.launchActor = state.actor;
     if (state.quickMode) showQuickView();
     else openApp({ actor: state.actor, action: state.pendingFrameAction, itemId: state.pendingItemId });
+    flushPendingOpen();
   } catch (error) {
     showFatal(errorMessage(error));
   }
+
+  registrationPromise.then(registration => {
+    if (!registration || !state.device || Notification.permission !== 'granted') return;
+    refreshStoredSubscription().catch(error => console.warn('No se pudo actualizar la suscripción en segundo plano.', error));
+  });
 }
 
 function bindEvents() {
@@ -153,8 +181,8 @@ function bindEvents() {
     }
     els.quickActorChooser.hidden = !els.quickActorChooser.hidden;
   });
-  els.quickAddButton.addEventListener('click', () => openApp({ actor: state.quickActor || state.actor, action: 'add' }));
-  els.quickOpenButton.addEventListener('click', () => openApp({ actor: state.quickActor || state.actor }));
+  els.quickAddButton.addEventListener('click', () => requestOpenApp({ actor: state.quickActor || state.actor, action: 'add' }));
+  els.quickOpenButton.addEventListener('click', () => requestOpenApp({ actor: state.quickActor || state.actor }));
   document.querySelector('[data-toggle-pin]').addEventListener('click', togglePinVisibility);
   els.installButton.addEventListener('click', requestInstall);
   els.bannerInstallButton.addEventListener('click', requestInstall);
@@ -175,26 +203,36 @@ function bindEvents() {
 
 async function restoreDevice() {
   try {
-    let subscription = null;
-    if ('Notification' in window && Notification.permission === 'granted' && state.registration) {
-      subscription = await currentOrNewSubscription();
-    }
     const result = await api('/api/register', {
       method: 'POST',
       body: {
         actor: state.actor,
-        ownerRole: state.ownerRole || roleForActor(state.actor, state.config?.people),
+        ownerRole: state.ownerRole || state.device?.ownerRole || roleForActor(state.actor),
         deviceId: state.device.id,
-        deviceSecret: state.device.secret,
-        subscription
+        deviceSecret: state.device.secret
       }
     });
-    acceptRegistration(result);
     return result;
   } catch (error) {
     if (error.code === 'PIN_INVALID' || error.code === 'PIN_INCORRECT' || error.code === 'DEVICE_UNAUTHORIZED') return null;
     throw error;
   }
+}
+
+async function refreshStoredSubscription() {
+  if (!state.registration || !state.device || Notification.permission !== 'granted') return;
+  const subscription = await currentOrNewSubscription();
+  const result = await api('/api/register', {
+    method: 'POST',
+    body: {
+      actor: state.actor,
+      ownerRole: state.ownerRole || state.device.ownerRole,
+      deviceId: state.device.id,
+      deviceSecret: state.device.secret,
+      subscription
+    }
+  });
+  acceptRegistration(result);
 }
 
 function showSetup(mode) {
@@ -319,17 +357,49 @@ async function completeRegistration(values, subscription) {
 function acceptRegistration(result) {
   state.actor = result.actor;
   state.ownerRole = result.ownerRole || state.ownerRole || roleForActor(result.actor, state.config?.people);
-  state.device = { id: result.deviceId, secret: result.deviceSecret, actor: result.actor, ownerRole: state.ownerRole };
   state.bridge = {
     notifyUrl: result.notifyUrl,
     notifySecret: result.bridgeSecret,
     appAccessToken: result.appAccessToken
   };
+  state.device = {
+    id: result.deviceId,
+    secret: result.deviceSecret,
+    actor: result.actor,
+    ownerRole: state.ownerRole,
+    appUrl: result.appUrl || state.config?.appUrl || state.device?.appUrl || '',
+    notifyUrl: result.notifyUrl,
+    notifySecret: result.bridgeSecret,
+    appAccessToken: result.appAccessToken,
+    people: state.config?.people || state.device?.people || []
+  };
   if (result.appUrl) {
+    if (!state.config) state.config = { claimed: true, people: state.device.people };
     state.config.appUrl = result.appUrl;
     setFrameUrl(result.appUrl);
   }
   localStorage.setItem(STORAGE_DEVICE, JSON.stringify(state.device));
+}
+
+function primeCachedSession() {
+  if (!state.device) return false;
+  state.actor = state.device.actor || 'Axel';
+  state.ownerRole = state.device.ownerRole || roleForActor(state.actor, state.device.people);
+  const hasBridge = state.device.appUrl && state.device.notifyUrl && state.device.notifySecret && state.device.appAccessToken;
+  if (!hasBridge) return false;
+  state.config = {
+    claimed: true,
+    appUrl: state.device.appUrl,
+    people: Array.isArray(state.device.people) && state.device.people.length ? state.device.people : [state.actor]
+  };
+  state.bridge = {
+    notifyUrl: state.device.notifyUrl,
+    notifySecret: state.device.notifySecret,
+    appAccessToken: state.device.appAccessToken
+  };
+  state.sessionReady = true;
+  setFrameUrl(state.device.appUrl);
+  return true;
 }
 
 async function requestPushSubscription() {
@@ -401,8 +471,26 @@ function openApp(options = {}) {
   configureFrame();
   if (state.frameReady && state.launchActor) {
     postToFrame({ type: 'casa-en-orden:set-actor', actor: state.launchActor });
+    dispatchPendingFrameAction();
   }
   updateInstallUi();
+}
+
+function requestOpenApp(options = {}) {
+  if (!state.sessionReady || !state.config?.appUrl || !state.bridge) {
+    state.pendingOpenOptions = options;
+    showToast('Conectando con tu hogar…', 2400);
+    return;
+  }
+  state.pendingOpenOptions = null;
+  openApp(options);
+}
+
+function flushPendingOpen() {
+  if (!state.pendingOpenOptions || !state.sessionReady || !state.config?.appUrl || !state.bridge) return;
+  const options = state.pendingOpenOptions;
+  state.pendingOpenOptions = null;
+  openApp(options);
 }
 
 function showQuickView() {
@@ -494,6 +582,7 @@ function handleFrameMessage(event) {
   if (data.type === 'casa-en-orden:shell-ready') {
     state.frameReady = true;
     configureFrame();
+    dispatchPendingFrameAction();
     dispatchPendingDataRefresh();
   }
   if (data.type === 'casa-en-orden:bridge-result') {
@@ -524,7 +613,12 @@ function dispatchPendingFrameAction() {
   const action = state.pendingFrameAction;
   if (!action) return;
   state.pendingFrameAction = '';
-  if (action === 'add') postToFrame({ type: 'casa-en-orden:open-new-item', actor: state.launchActor || state.actor });
+  if (action === 'add') postToFrame({
+    type: 'casa-en-orden:open-new-item',
+    actor: state.launchActor || state.actor,
+    people: state.config?.people || [],
+    homeName: document.title || 'Casa en Orden'
+  });
   if (action === 'open-item') postToFrame({ type: 'casa-en-orden:open-item', itemId: state.pendingItemId });
   if (action === 'open-pending') postToFrame({ type: 'casa-en-orden:open-view', view: 'pending' });
   state.pendingItemId = '';
@@ -633,8 +727,11 @@ function togglePinVisibility(event) {
 
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return null;
-  await navigator.serviceWorker.register('/sw.js', { scope: '/' });
-  return navigator.serviceWorker.ready;
+  const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+  return Promise.race([
+    navigator.serviceWorker.ready,
+    new Promise(resolve => setTimeout(() => resolve(registration), 5000))
+  ]);
 }
 
 async function api(path, options = {}) {
@@ -643,7 +740,18 @@ async function api(path, options = {}) {
     init.headers['Content-Type'] = 'application/json';
     init.body = JSON.stringify(options.body);
   }
-  const response = await fetch(path, init);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Number(options.timeoutMs) || 12000);
+  init.signal = controller.signal;
+  let response;
+  try {
+    response = await fetch(path, init);
+  } catch (error) {
+    if (error && error.name === 'AbortError') throw localError('La conexión está tardando demasiado. Verifica tu internet y vuelve a intentar.');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
   let payload;
   try {
     payload = await response.json();
@@ -692,6 +800,10 @@ function activationLabel() {
 }
 
 function showFatal(message) {
+  els.setupView.hidden = false;
+  els.quickView.hidden = true;
+  els.frame.hidden = true;
+  els.loadingState.hidden = false;
   els.loadingState.innerHTML = `<div><strong>No pudimos iniciar la app</strong><small>${escapeHtml(message)}</small><button class="text-button" type="button" data-retry>Volver a intentar</button></div>`;
   els.loadingState.querySelector('[data-retry]').addEventListener('click', () => location.reload());
 }

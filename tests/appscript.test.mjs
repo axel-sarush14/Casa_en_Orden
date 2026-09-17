@@ -123,7 +123,7 @@ test('el arranque detecta archivos de interfaz mezclados y nunca deja un cargado
     'itemAttachmentHelp'
   ];
   requiredIds.forEach(id => assert.match(indexHtml, new RegExp(`id="${id}"`)));
-  assert.match(scripts, /const UI_REVISION = '4\.3\.2'/);
+  assert.match(scripts, /const UI_REVISION = '4\.3\.3'/);
   assert.match(scripts, /function assertUiCompatibility\(\)/);
   assert.match(scripts, /Los archivos de Apps Script no son de la misma versión/);
   assert.match(scripts, /function failStartup\(message\)/);
@@ -174,6 +174,23 @@ test('Apps Script puede recibir la conexión por el fragmento si postMessage fal
   assert.match(scripts, /const FRAME_BOOTSTRAP = readFrameBootstrap\(\)/);
   assert.match(scripts, /get\('ceBridge'\)/);
   assert.match(scripts, /configurePushBridge\(FRAME_BOOTSTRAP\)/);
+});
+
+test('el alta rápida abre el formulario antes de terminar de cargar el tablero', () => {
+  assert.match(scripts, /function primeQuickAddContext\(data\)/);
+  assert.match(scripts, /data\.type === 'casa-en-orden:open-new-item'[\s\S]*?primeQuickAddContext\(data\);[\s\S]*?openForm\(\)/);
+  assert.match(scripts, /els\.loading\.hidden = true;[\s\S]*?els\.app\.hidden = false;/);
+  assert.match(scripts, /options\.preloadedData \|\| await api\('getBootstrapData'\)/);
+});
+
+test('el arranque enlazado evita la llamada duplicada y limita la espera de Google', () => {
+  const start = scripts.indexOf('async function configurePushBridge(data)');
+  const end = scripts.indexOf('function primeQuickAddContext', start);
+  const bridge = scripts.slice(start, end);
+  assert.ok(start >= 0 && end > start);
+  assert.ok(bridge.indexOf("api('getBootstrapData')") < bridge.indexOf("api('configurarPuentePushPWA'"));
+  assert.match(scripts, /Google está tardando demasiado en responder/);
+  assert.match(scripts, /const timer = setTimeout/);
 });
 
 test('la interfaz ya no consulta cada dos minutos', () => {

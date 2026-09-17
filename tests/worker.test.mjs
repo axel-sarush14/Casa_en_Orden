@@ -77,6 +77,17 @@ test('crea el hogar, protege la URL y reutiliza sus secretos', async () => {
   }));
   assert.equal(activatedFirstDevice.status, 200);
 
+  const fastRestore = await registry.fetch(jsonRequest('/api/register', {
+    actor: 'Axel',
+    ownerRole: 'person1',
+    deviceId: firstDevice.deviceId,
+    deviceSecret: firstDevice.deviceSecret
+  }));
+  const fastRestoreBody = await fastRestore.json();
+  assert.equal(fastRestore.status, 200);
+  assert.equal(fastRestoreBody.notificationsActive, true);
+  assert.equal(storage.data.get('devices')[firstDevice.deviceId].subscription.endpoint, axelSubscription.endpoint);
+
   const publicConfig = await registry.fetch(new Request('https://casa.test/api/config'));
   const publicConfigBody = await publicConfig.json();
   assert.equal(publicConfigBody.claimed, true);
