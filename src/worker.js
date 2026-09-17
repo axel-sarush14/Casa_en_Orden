@@ -1,3 +1,5 @@
+// Activar despliegue automático de Cloudflare
+
 import { generateVAPIDKeys, sendNotification } from 'web-push-neo';
 import {
   ApiError,
