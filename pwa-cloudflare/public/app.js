@@ -10,7 +10,9 @@ const state = {
   ownerRole: '',
   bridge: null,
   frameReady: false,
-  frameChannel: crypto.randomUUID(),
+  frameChannel: typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
   frameMessenger: null,
   forceActorOnce: false,
   launchActor: '',
@@ -368,6 +370,19 @@ function setFrameUrl(url) {
   if (!url) return;
   const target = new URL(url);
   target.searchParams.set('pwaChannel', state.frameChannel);
+  const bootstrap = {
+    channel: state.frameChannel,
+    notifyUrl: state.bridge?.notifyUrl || '',
+    notifySecret: state.bridge?.notifySecret || '',
+    appAccessToken: state.bridge?.appAccessToken || '',
+    deviceId: state.device?.id || '',
+    deviceOwner: state.actor || '',
+    deviceOwnerRole: state.ownerRole || '',
+    pwaUrl: location.origin
+  };
+  const fragment = new URLSearchParams();
+  fragment.set('ceBridge', JSON.stringify(bootstrap));
+  target.hash = fragment.toString();
   const value = target.toString();
   if (els.frame.src !== value) els.frame.src = value;
 }

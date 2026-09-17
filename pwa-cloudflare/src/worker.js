@@ -55,7 +55,7 @@ export class HomeRegistry {
   async health() {
     const claimed = Boolean(await this.ctx.storage.get('pinHash'));
     const devices = (await this.ctx.storage.get('devices')) || {};
-    return json({ ok: true, claimed, devices: Object.keys(devices).length, version: 4.3 });
+    return json({ ok: true, claimed, devices: Object.keys(devices).length, version: '4.3.2' });
   }
 
   async config() {
@@ -71,7 +71,7 @@ export class HomeRegistry {
       hasAppUrl: Boolean(appUrl),
       vapidPublicKey: vapid.publicKey,
       people: publicPeople(devices || {}),
-      version: 4.3
+      version: '4.3.2'
     });
   }
 
@@ -143,7 +143,7 @@ export class HomeRegistry {
 
   async bridgeStatus(request) {
     await this.requireBridge(request);
-    return json({ ok: true, app: 'casa-en-orden', version: 4.3 });
+    return json({ ok: true, app: 'casa-en-orden', version: '4.3.2' });
   }
 
   async notify(request) {

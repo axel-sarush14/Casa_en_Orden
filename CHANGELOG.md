@@ -1,5 +1,21 @@
 # Historial de cambios
 
+## 4.3.2 — 2026-09-17
+
+- Evita que una restricción de `localStorage` en el iframe de Google interrumpa el arranque antes de mostrar un diagnóstico.
+- Ejecuta la inicialización tanto antes como después de `DOMContentLoaded` y la protege contra ejecuciones duplicadas.
+- Agrega un canal alternativo de arranque dentro del fragmento del iframe, además del intercambio normal con `postMessage`.
+- Hace que la PWA busque en red los archivos principales antes de recurrir a la caché antigua.
+- Conserva la implementación `/exec`, el PIN, los teléfonos, las suscripciones, el enlace NFC y todos los datos.
+
+## 4.3.1 — 2026-09-16
+
+- Corrige el cargador infinito provocado por mezclar `Scripts.html` 4.3 con un `Index.html` anterior.
+- Comprueba al iniciar que los controles requeridos por la interfaz estén presentes.
+- Muestra un aviso con la solución cuando los archivos de Apps Script no pertenecen a la misma versión.
+- Muestra un error recuperable si Cloudflare no entrega la configuración o Apps Script no carga los datos iniciales.
+- Conserva la identidad instalada, el PIN, los teléfonos, las suscripciones, el enlace NFC y todos los datos.
+
 ## 4.3.0 — 2026-09-16
 
 - Mantiene ocultos los resultados del catálogo mientras el buscador de **Nuevo pendiente** esté vacío.

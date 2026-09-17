@@ -60,6 +60,11 @@
   .loading-mark span:nth-child(2) { height: 30px; }
   .loading-mark span:nth-child(3) { height: 22px; animation-delay: .2s; }
   @keyframes loadingBars { 0%, 100% { transform: scaleY(.7); opacity: .6; } 50% { transform: scaleY(1); opacity: 1; } }
+  .startup-error { display: grid; justify-items: center; gap: 10px; width: min(calc(100% - 36px), 420px); padding: 22px; border: 1px solid #ecd1ca; border-radius: 20px; background: #fff8f6; color: var(--text); box-shadow: var(--shadow-soft); text-align: center; }
+  .startup-error-icon { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 14px; background: var(--clay-soft); color: var(--clay-dark); font-size: 24px; font-weight: 900; }
+  .startup-error strong { font-size: 18px; }
+  .startup-error small { color: var(--muted); font-size: 12px; line-height: 1.5; }
+  .startup-error button { min-height: 42px; margin-top: 3px; padding: 0 18px; border: 0; border-radius: 12px; background: var(--sage); color: #fff; font-weight: 800; cursor: pointer; }
 
   .app { width: min(100%, 940px); min-height: 100dvh; margin: 0 auto; }
   .topbar {

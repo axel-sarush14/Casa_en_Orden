@@ -1,11 +1,18 @@
-# Casa en Orden 4.3 — catálogo compacto y fotos en pendientes
+# Casa en Orden 4.3.2 — arranque reforzado en la app instalada
 
-Esta versión actualiza Casa en Orden 4.2 sin borrar pendientes, productos del catálogo, fotos existentes, la Hoja de cálculo ni comprobantes de Drive. Al crear un pendiente, el catálogo permanece cerrado hasta que escribes una búsqueda y ahora puedes tomar o elegir una foto del producto directamente en ese mismo formulario.
+Esta versión corrige el bloqueo en **Preparando tu hogar…** que puede ocurrir aun cuando la implementación de Apps Script sea la correcta. El origen es el arranque dentro del marco externo de Google: algunos teléfonos bloquean su almacenamiento local o no entregan a tiempo el primer mensaje de Cloudflare. La versión 4.3.2 tolera ambas situaciones y conserva pendientes, catálogo, fotos, Hoja de cálculo, PIN, teléfonos y comprobantes.
 
 GitHub y Cloudflare publican la PWA y entregan Web Push directo. No usa Firebase ni requiere crear llaves manualmente.
 
 ## Novedades
 
+- Tolera que Android bloquee `localStorage` dentro del marco de Apps Script, sin detener el JavaScript.
+- Entrega la configuración del puente por dos vías: `postMessage` y un fragmento privado del iframe que no se envía al servidor.
+- Inicia correctamente aunque el navegador haya terminado de construir el documento antes de registrar el evento de arranque.
+- La PWA consulta primero en red `app.js`, `app.css` y el manifiesto para no seguir usando una copia anterior después de publicar GitHub.
+- Valida al iniciar que `Index.html` y `Scripts.html` contengan juntos los controles de fotografía de la versión 4.3.2.
+- Si los archivos no coinciden, muestra instrucciones claras en pantalla en lugar de dejar el cargador indefinidamente.
+- Si Cloudflare o Apps Script no terminan de enlazarse, muestra el error y un botón para volver a intentar.
 - Cada teléfono queda identificado de forma permanente como **Axel** o **Lau/Laura**.
 - Al abrir normalmente, la app entra con el perfil propio del teléfono.
 - El cambio de persona dentro de la app es temporal y no modifica al dueño del dispositivo.
@@ -32,7 +39,22 @@ GitHub y Cloudflare publican la PWA y entregan Web Push directo. No usa Firebase
 | `apps-script/` | Código actualizado de Google Apps Script. |
 | `pwa-cloudflare/` | PWA y Worker que se publican desde GitHub en Cloudflare. |
 
-## Actualizar una instalación 4.2 existente
+## Corregir una instalación que se queda cargando
+
+Para esta corrección deben actualizarse **Apps Script y GitHub/Cloudflare**, porque la nueva conexión alternativa usa ambos lados:
+
+1. En Apps Script sustituye **completos** `Index.html`, `Scripts.html` y `Styles.html` con los tres archivos de este paquete. No mezcles fragmentos.
+2. Sustituye también `Code.gs` y `appsscript.json` para dejar los cinco archivos en la misma versión.
+3. Pulsa **Guardar proyecto** y espera a que termine.
+4. Ve a **Implementar → Administrar implementaciones → Editar**.
+5. En **Versión**, elige **Nueva versión** y pulsa **Implementar**. No basta con guardar el editor.
+6. Conserva la misma URL `/exec`.
+7. En GitHub reemplaza también la carpeta `pwa-cloudflare` con la de este paquete, confirma los cambios y espera a que Cloudflare marque el despliegue como correcto.
+8. En el teléfono, cierra Casa en Orden desde aplicaciones recientes y vuelve a abrirla. Si estaba abierta durante el despliegue, ciérrala y ábrela una segunda vez. No hace falta desinstalarla.
+
+No restablezcas el enlace, no cambies el PIN y no vuelvas a registrar los teléfonos.
+
+## Actualizar una instalación 4.2 o 4.3 existente
 
 ### 1. Actualiza Apps Script
 

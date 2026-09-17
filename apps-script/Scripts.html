@@ -6,12 +6,16 @@
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   const STORAGE_ACTOR = 'casaEnOrden.actor';
   const STORAGE_DEMO = 'casaEnOrden.demoData';
+  const UI_REVISION = '4.3.2';
   const DEMO_MODE = new URLSearchParams(location.search).get('demo') === '1' ||
     !(window.google && google.script && google.script.run);
-  const PWA_CHANNEL = document.body.dataset.pwaChannel || '';
+  const FRAME_BOOTSTRAP = readFrameBootstrap();
+  const PWA_CHANNEL = (document.body && document.body.dataset.pwaChannel) || FRAME_BOOTSTRAP.channel || '';
   let PWA_ACCESS_TOKEN = '';
   let PWA_DEVICE_ID = '';
   let PWA_DEVICE_OWNER = '';
+  let bridgeConfiguring = false;
+  let appStarted = false;
   let itemAttachmentDraft = null;
   let itemAttachmentPreparing = false;
   let itemAttachmentSelectionId = 0;
@@ -23,7 +27,7 @@
 
   const state = {
     data: { settings: {}, items: [], activity: [], catalog: [] },
-    actor: localStorage.getItem(STORAGE_ACTOR) || '',
+    actor: safeStorageGet(STORAGE_ACTOR) || '',
     activeView: 'home',
     filter: 'Todos',
     search: '',
@@ -33,7 +37,8 @@
     confirmResolve: null,
     settingsDirty: false,
     authenticated: false,
-    remoteRefreshPending: false
+    remoteRefreshPending: false,
+    startupError: ''
   };
 
   const els = {
@@ -60,18 +65,64 @@
     confirmAccept: $('#confirmAccept'), confirmCancel: $('#confirmCancel')
   };
 
-  document.addEventListener('DOMContentLoaded', init);
+  window.addEventListener('message', handlePwaMessage);
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init, { once: true });
+  } else {
+    setTimeout(init, 0);
+  }
 
   function init() {
-    bindEvents();
-    if (DEMO_MODE) {
-      state.authenticated = true;
-      loadData({ initial: true });
-    } else if (PWA_CHANNEL) {
-      postToPwa({ type: 'casa-en-orden:shell-ready' });
-    } else {
-      showLockedState();
+    if (appStarted) return;
+    appStarted = true;
+    try {
+      assertUiCompatibility();
+      bindEvents();
+      if (DEMO_MODE) {
+        state.authenticated = true;
+        loadData({ initial: true });
+      } else if (PWA_CHANNEL) {
+        postToPwa({ type: 'casa-en-orden:shell-ready' });
+        if (FRAME_BOOTSTRAP.notifyUrl && FRAME_BOOTSTRAP.notifySecret && FRAME_BOOTSTRAP.appAccessToken) {
+          configurePushBridge(FRAME_BOOTSTRAP);
+        }
+        setTimeout(() => {
+          if (!state.authenticated && !state.startupError && !els.loading.hidden) {
+            failStartup('No recibimos la conexión de Cloudflare. Cierra la app y vuelve a abrirla.');
+          }
+        }, 20000);
+      } else {
+        showLockedState();
+      }
+    } catch (error) {
+      failStartup(errorMessage(error));
     }
+  }
+
+  function assertUiCompatibility() {
+    const required = [
+      'itemAttachmentTitle', 'itemRemoveAttachment', 'itemAttachmentPreview',
+      'itemAttachmentPreviewImg', 'itemAttachmentFileIcon', 'itemAttachmentPreviewName',
+      'itemAttachmentPreviewNote', 'removeItemAttachment', 'itemAttachmentIconUse',
+      'itemAttachmentHelp'
+    ];
+    const missing = required.filter(id => !document.getElementById(id));
+    if (missing.length) {
+      throw new Error(`Los archivos de Apps Script no son de la misma versión. Vuelve a copiar Index.html y Scripts.html de Casa en Orden ${UI_REVISION}, guarda el proyecto y publica una versión nueva.`);
+    }
+  }
+
+  function failStartup(message) {
+    state.startupError = String(message || 'No pudimos iniciar la aplicación.');
+    console.error(state.startupError);
+    if (!els.loading) return;
+    els.loading.hidden = false;
+    if (els.app) els.app.hidden = true;
+    els.loading.innerHTML = '<div class="startup-error"><span class="startup-error-icon">!</span><strong>No pudimos terminar de abrir la app</strong><small></small><button type="button">Volver a intentar</button></div>';
+    const detail = $('small', els.loading);
+    if (detail) detail.textContent = state.startupError;
+    const retry = $('button', els.loading);
+    if (retry) retry.addEventListener('click', () => location.reload());
   }
 
   function bindEvents() {
@@ -127,7 +178,6 @@
     els.detailContent.addEventListener('change', handleDetailChange);
     els.confirmCancel.addEventListener('click', () => finishConfirm(false));
     els.confirmAccept.addEventListener('click', () => finishConfirm(true));
-    window.addEventListener('message', handlePwaMessage);
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible' && state.authenticated) requestFreshData('foreground');
     });
@@ -198,12 +248,16 @@
       showSync(options.manual ? 'Actualizado ahora' : 'Sincronizado ahora');
     } catch (error) {
       console.error(error);
+      if (options.initial) {
+        failStartup(`No pudimos cargar tus pendientes. ${errorMessage(error)}`);
+        return;
+      }
       toast(errorMessage(error), 'error', 6500);
       showSync('No se pudo sincronizar');
     } finally {
       state.syncing = false;
       els.refreshButton.classList.remove('is-spinning');
-      if (options.initial) {
+      if (options.initial && !state.startupError) {
         els.loading.hidden = true;
         els.app.hidden = false;
       }
@@ -712,7 +766,7 @@
       state.data.settings = result.settings;
       if (oldActor === oldSettings.person1Name) state.actor = result.settings.person1Name;
       if (oldActor === oldSettings.person2Name) state.actor = result.settings.person2Name;
-      localStorage.setItem(STORAGE_ACTOR, state.actor);
+      safeStorageSet(STORAGE_ACTOR, state.actor);
       state.settingsDirty = false;
       toast('Configuración guardada.');
       await loadData();
@@ -858,7 +912,7 @@
     const button = event.target.closest('[data-actor]');
     if (!button) return;
     state.actor = button.dataset.actor;
-    localStorage.setItem(STORAGE_ACTOR, state.actor);
+    safeStorageSet(STORAGE_ACTOR, state.actor);
     renderChrome();
     renderActorOptions();
     renderResponsibleChoices();
@@ -1021,19 +1075,25 @@
   function validateActor() {
     const { person1Name, person2Name } = state.data.settings;
     if (![person1Name, person2Name].includes(state.actor)) state.actor = person1Name || person2Name || 'Axel';
-    localStorage.setItem(STORAGE_ACTOR, state.actor);
+    safeStorageSet(STORAGE_ACTOR, state.actor);
   }
 
   async function handlePwaMessage(event) {
     const data = event.data;
     if (!PWA_CHANNEL || !data || typeof data !== 'object' || data.channel !== PWA_CHANNEL) return;
     if (event.source !== window.top && event.source !== window.parent) return;
+    if (state.startupError) {
+      if (data.type === 'casa-en-orden:configure-push-bridge') {
+        postToPwa({ type: 'casa-en-orden:bridge-result', ok: false, error: state.startupError });
+      }
+      return;
+    }
 
     if (data.type === 'casa-en-orden:set-actor') {
       const people = [state.data.settings.person1Name, state.data.settings.person2Name];
       if (!people.includes(data.actor)) return;
       state.actor = data.actor;
-      localStorage.setItem(STORAGE_ACTOR, state.actor);
+      safeStorageSet(STORAGE_ACTOR, state.actor);
       renderChrome();
       renderActorOptions();
       renderResponsibleChoices();
@@ -1069,23 +1129,37 @@
     }
 
     if (data.type === 'casa-en-orden:configure-push-bridge') {
-      try {
-        const result = await api('configurarPuentePushPWA', {
-          notifyUrl: data.notifyUrl,
-          notifySecret: data.notifySecret,
-          appAccessToken: data.appAccessToken,
-          pwaUrl: data.pwaUrl
-        });
-        PWA_ACCESS_TOKEN = String(data.appAccessToken || '');
-        PWA_DEVICE_ID = String(data.deviceId || '');
-        PWA_DEVICE_OWNER = String(data.deviceOwner || '');
-        const firstAuthentication = !state.authenticated;
-        state.authenticated = true;
-        postToPwa({ type: 'casa-en-orden:bridge-result', ok: Boolean(result && result.ok) });
-        if (firstAuthentication) await loadData({ initial: true });
-      } catch (error) {
-        postToPwa({ type: 'casa-en-orden:bridge-result', ok: false, error: errorMessage(error) });
-      }
+      await configurePushBridge(data);
+    }
+  }
+
+  async function configurePushBridge(data) {
+    if (!data || bridgeConfiguring) return;
+    PWA_ACCESS_TOKEN = String(data.appAccessToken || PWA_ACCESS_TOKEN || '');
+    PWA_DEVICE_ID = String(data.deviceId || PWA_DEVICE_ID || '');
+    PWA_DEVICE_OWNER = String(data.deviceOwner || PWA_DEVICE_OWNER || '');
+    if (state.authenticated) {
+      postToPwa({ type: 'casa-en-orden:bridge-result', ok: true });
+      return;
+    }
+
+    bridgeConfiguring = true;
+    try {
+      const result = await api('configurarPuentePushPWA', {
+        notifyUrl: data.notifyUrl,
+        notifySecret: data.notifySecret,
+        appAccessToken: data.appAccessToken,
+        pwaUrl: data.pwaUrl
+      });
+      state.authenticated = true;
+      postToPwa({ type: 'casa-en-orden:bridge-result', ok: Boolean(result && result.ok) });
+      await loadData({ initial: true });
+    } catch (error) {
+      const message = errorMessage(error);
+      postToPwa({ type: 'casa-en-orden:bridge-result', ok: false, error: message });
+      failStartup(`No pudimos enlazar Apps Script con la app. ${message}`);
+    } finally {
+      bridgeConfiguring = false;
     }
   }
 
@@ -1108,6 +1182,33 @@
     } catch (error) {
       console.warn('No se pudo comunicar con la PWA.', error);
     }
+  }
+
+  function readFrameBootstrap() {
+    try {
+      const value = new URLSearchParams(location.hash.replace(/^#/, '')).get('ceBridge');
+      if (!value) return {};
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (error) {
+      console.warn('No se pudo leer la conexión alternativa de la PWA.', error);
+      return {};
+    }
+  }
+
+  function safeStorageGet(key) {
+    try { return window.localStorage.getItem(key); }
+    catch (error) { return ''; }
+  }
+
+  function safeStorageSet(key, value) {
+    try { window.localStorage.setItem(key, value); return true; }
+    catch (error) { return false; }
+  }
+
+  function safeStorageRemove(key) {
+    try { window.localStorage.removeItem(key); return true; }
+    catch (error) { return false; }
   }
 
   function showLockedState() {
@@ -1390,13 +1491,13 @@
   }
 
   function demoData() {
-    const stored = localStorage.getItem(STORAGE_DEMO);
+    const stored = safeStorageGet(STORAGE_DEMO);
     if (stored) {
       try {
         const parsed = JSON.parse(stored);
         if (!Array.isArray(parsed.catalog)) parsed.catalog = [];
         return parsed;
-      } catch (error) { localStorage.removeItem(STORAGE_DEMO); }
+      } catch (error) { safeStorageRemove(STORAGE_DEMO); }
     }
     const now = new Date();
     const iso = days => { const date = new Date(now); date.setDate(date.getDate() + days); return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`; };
@@ -1431,7 +1532,7 @@
     else date.setMonth(date.getMonth() + (({ Mensual:1, Bimestral:2, Trimestral:3, Semestral:6, Anual:12 })[recurrence] || 1));
     return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
   }
-  function saveDemo(data) { localStorage.setItem(STORAGE_DEMO, JSON.stringify(data)); }
+  function saveDemo(data) { safeStorageSet(STORAGE_DEMO, JSON.stringify(data)); }
   function structuredCloneSafe(data) { return JSON.parse(JSON.stringify(data)); }
 })();
 </script>

@@ -27,13 +27,28 @@ test('todos los archivos precargados por el service worker existen', () => {
   });
 });
 
+test('el JavaScript principal se consulta en red antes de usar la copia antigua', () => {
+  const source = readFileSync(`${publicRoot}sw.js`, 'utf8');
+  assert.match(source, /\['\/app\.js', '\/app\.css', '\/manifest\.webmanifest'\]\.includes\(url\.pathname\)/);
+  assert.match(source, /includes\(url\.pathname\)[\s\S]*?event\.respondWith\(fetch\(request\)/);
+});
+
 test('la página carga el manifiesto, el service worker y una política de contenido', () => {
   const html = readFileSync(`${publicRoot}index.html`, 'utf8');
   const app = readFileSync(`${publicRoot}app.js`, 'utf8');
   assert.match(html, /rel="manifest"/);
   assert.match(html, /Content-Security-Policy/);
+  assert.match(html, /\/app\.js\?v=4\.3\.2/);
+  assert.match(html, /\/app\.css\?v=4\.3\.2/);
   assert.match(app, /registerServiceWorker/);
   assert.match(app, /configure-push-bridge/);
+});
+
+test('la PWA entrega una conexión alternativa dentro del fragmento del iframe', () => {
+  const app = readFileSync(`${publicRoot}app.js`, 'utf8');
+  assert.match(app, /fragment\.set\('ceBridge', JSON\.stringify\(bootstrap\)\)/);
+  assert.match(app, /notifySecret: state\.bridge\?\.notifySecret/);
+  assert.match(app, /target\.hash = fragment\.toString\(\)/);
 });
 
 test('el acceso NFC usa la identidad fija del teléfono y ofrece el alta rápida', () => {

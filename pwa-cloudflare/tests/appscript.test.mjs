@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { runInNewContext } from 'node:vm';
 
 const projectRoot = fileURLToPath(new URL('../../', import.meta.url));
 const codePath = `${projectRoot}apps-script/Code.gs`;
@@ -112,6 +113,67 @@ test('un pendiente permite tomar una foto y la muestra como producto sin alterar
   assert.match(code, /isProductPhoto && !mimeType\.startsWith\('image\/'\)/);
   assert.match(code, /item\.type !== 'Servicio'/);
   assert.match(code, /removeAttachment/);
+});
+
+test('el arranque detecta archivos de interfaz mezclados y nunca deja un cargador infinito', () => {
+  const requiredIds = [
+    'itemAttachmentTitle', 'itemRemoveAttachment', 'itemAttachmentPreview',
+    'itemAttachmentPreviewImg', 'itemAttachmentFileIcon', 'itemAttachmentPreviewName',
+    'itemAttachmentPreviewNote', 'removeItemAttachment', 'itemAttachmentIconUse',
+    'itemAttachmentHelp'
+  ];
+  requiredIds.forEach(id => assert.match(indexHtml, new RegExp(`id="${id}"`)));
+  assert.match(scripts, /const UI_REVISION = '4\.3\.2'/);
+  assert.match(scripts, /function assertUiCompatibility\(\)/);
+  assert.match(scripts, /Los archivos de Apps Script no son de la misma versión/);
+  assert.match(scripts, /function failStartup\(message\)/);
+  assert.match(scripts, /No recibimos la conexión de Cloudflare/);
+  assert.match(scripts, /if \(options\.initial\) \{[\s\S]*?failStartup/);
+  assert.ok(scripts.indexOf("window.addEventListener('message', handlePwaMessage)") < scripts.indexOf('function init()'));
+});
+
+test('el arranque tolera que Android bloquee localStorage dentro del marco de Google', () => {
+  assert.match(scripts, /actor: safeStorageGet\(STORAGE_ACTOR\)/);
+  assert.doesNotMatch(scripts, /(?<!window\.)localStorage\./);
+  assert.match(scripts, /function safeStorageGet\(key\) \{[\s\S]*?try \{ return window\.localStorage\.getItem\(key\); \}[\s\S]*?catch/);
+  assert.match(scripts, /document\.readyState === 'loading'/);
+
+  const listeners = {};
+  const google = { script: { run: {} } };
+  const fakeWindow = {
+    google,
+    localStorage: {
+      getItem() { throw new Error('Storage access is denied'); },
+      setItem() { throw new Error('Storage access is denied'); },
+      removeItem() { throw new Error('Storage access is denied'); }
+    },
+    addEventListener() {}
+  };
+  fakeWindow.top = fakeWindow;
+  fakeWindow.parent = fakeWindow;
+  const fakeDocument = {
+    body: { dataset: { pwaChannel: 'prueba' } },
+    readyState: 'loading',
+    querySelector() { return null; },
+    querySelectorAll() { return []; },
+    addEventListener(type, listener) { listeners[type] = listener; }
+  };
+  assert.doesNotThrow(() => runInNewContext(scripts, {
+    window: fakeWindow,
+    document: fakeDocument,
+    location: { search: '', hash: '' },
+    google,
+    URLSearchParams,
+    setTimeout,
+    console
+  }));
+  assert.equal(typeof listeners.DOMContentLoaded, 'function');
+});
+
+test('Apps Script puede recibir la conexión por el fragmento si postMessage falla', () => {
+  assert.match(scripts, /const FRAME_BOOTSTRAP = readFrameBootstrap\(\)/);
+  assert.match(scripts, /get\('ceBridge'\)/);
+  assert.match(scripts, /configurePushBridge\(FRAME_BOOTSTRAP\)/);
 });
 
 test('la interfaz ya no consulta cada dos minutos', () => {

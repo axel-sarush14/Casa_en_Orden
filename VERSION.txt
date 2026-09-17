@@ -1,4 +1,4 @@
-Casa en Orden 4.3.0
-Base: Casa_en_Orden_4.2_Fotos_Camara_Galeria.zip
-SHA-256 de la base: d4c2de5ecf76b89a0100c7e2f9a9ea770fc0de560adf8502ec8d7b79d383ad3a
+Casa en Orden 4.3.2
+Base: Casa_en_Orden_4.3_Catalogo_Compacto_Fotos_Pendientes.zip
+SHA-256 de la base: bf27772936aea7324af7db7160567fb4a0b44d9f873eb61f5231a99444496bc8
 Generado: 2026-09-16
