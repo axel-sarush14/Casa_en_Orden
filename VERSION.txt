@@ -1,4 +1,0 @@
-Casa en Orden 4.3.2
-Base: Casa_en_Orden_4.3_Catalogo_Compacto_Fotos_Pendientes.zip
-SHA-256 de la base: bf27772936aea7324af7db7160567fb4a0b44d9f873eb61f5231a99444496bc8
-Generado: 2026-09-16
