@@ -1,4 +1,4 @@
-// Activar despliegue automático de Cloudflare
+// Activar  despliegue automático de Cloudflare
 
 import { generateVAPIDKeys, sendNotification } from 'web-push-neo';
 import {
