@@ -81,10 +81,15 @@ test('la búsqueda usa un solo catálogo sin depender de la categoría del pendi
   assert.match(scripts, /catalogSearchScore/);
 });
 
-test('el catálogo permite tomar o elegir una foto y la guarda en Drive', () => {
-  assert.match(indexHtml, /id="catalogImageFile"[^>]+type="file"[^>]+accept="image\/\*"/);
-  assert.doesNotMatch(indexHtml.match(/<input id="catalogImageFile"[^>]*>/)?.[0] || '', /\bcapture=/);
-  assert.match(indexHtml, /Tomar o elegir foto/);
+test('el catálogo separa cámara y galería y guarda la foto en Drive', () => {
+  const gallery = indexHtml.match(/<input id="catalogImageFile"[^>]*>/)?.[0] || '';
+  const camera = indexHtml.match(/<input id="catalogCameraFile"[^>]*>/)?.[0] || '';
+  assert.match(gallery, /type="file"/);
+  assert.match(gallery, /accept="image\/\*"/);
+  assert.doesNotMatch(gallery, /\bcapture=/);
+  assert.match(camera, /capture="environment"/);
+  assert.match(indexHtml, /Tomar foto/);
+  assert.match(indexHtml, /Elegir de galería/);
   assert.doesNotMatch(indexHtml, /URL de imagen/);
   assert.match(scripts, /prepareCatalogImage/);
   assert.match(scripts, /uploadCatalogImage/);
@@ -109,25 +114,27 @@ test('el alta de pendientes abre un catálogo visual, buscable y de selección m
   assert.match(code, /Puedes agregar hasta 25 productos a la vez/);
 });
 
-test('los productos nuevos se guardan en el catálogo y admiten imagen automática o foto real', () => {
+test('los productos nuevos se guardan en el catálogo y usan iconos automáticos sin IA', () => {
   assert.match(indexHtml, /Guardar también en catálogo/);
-  assert.match(indexHtml, /id="generateItemImageButton"/);
-  assert.match(indexHtml, /id="generateCatalogImageButton"/);
-  assert.match(scripts, /function isAutomaticImageCandidate/);
-  assert.match(scripts, /papaya/);
-  assert.match(scripts, /casa-en-orden:generate-product-image/);
-  assert.match(scripts, /casa-en-orden:product-image-result/);
-  assert.match(scripts, /Imagen automática ilustrativa/);
+  assert.match(indexHtml, /id="itemAutomaticIconEmoji"/);
+  assert.match(indexHtml, /id="catalogAutomaticIconEmoji"/);
+  assert.match(scripts, /function catalogFallbackEmoji/);
+  assert.match(scripts, /\/papaya\|mango\//);
+  assert.doesNotMatch(scripts, /generate-product-image/);
+  assert.doesNotMatch(indexHtml, /Crear imagen automática/);
   assert.match(scripts, /form\.get\('saveToCatalog'\) === 'on'/);
 });
 
-test('un pendiente permite tomar una foto y la muestra como producto sin alterar comprobantes de servicios', () => {
+test('un pendiente separa cámara y galería y muestra la foto sin alterar comprobantes', () => {
   const itemFile = indexHtml.match(/<input id="itemFile"[^>]*>/)?.[0] || '';
+  const cameraFile = indexHtml.match(/<input id="itemCameraFile"[^>]*>/)?.[0] || '';
   assert.match(itemFile, /type="file"/);
   assert.match(itemFile, /accept="image\/\*"/);
   assert.doesNotMatch(itemFile, /\bcapture=/);
+  assert.match(cameraFile, /capture="environment"/);
   assert.match(indexHtml, /id="itemAttachmentPreview"/);
-  assert.match(indexHtml, /Tomar o elegir foto/);
+  assert.match(indexHtml, /Tomar foto/);
+  assert.match(indexHtml, /Elegir de galería/);
   assert.doesNotMatch(indexHtml, /Agregar foto o comprobante/);
   assert.match(scripts, /handleItemAttachmentSelection/);
   assert.match(scripts, /itemProductPhotoUrl/);
@@ -147,16 +154,30 @@ test('el arranque detecta archivos de interfaz mezclados y nunca deja un cargado
     'itemAttachmentPreviewNote', 'removeItemAttachment', 'itemAttachmentIconUse',
     'itemAttachmentHelp', 'itemModeTabs', 'catalogModePanel', 'newItemPanel',
     'catalogVisualGrid', 'catalogSelectionBar', 'addCatalogSelectionButton',
-    'saveItemToCatalog', 'generateItemImageButton', 'generateCatalogImageButton'
+    'saveItemToCatalog', 'itemCameraFile', 'catalogCameraFile',
+    'whatsappModeButton', 'whatsappShareBar', 'shareWhatsappButton'
   ];
   requiredIds.forEach(id => assert.match(indexHtml, new RegExp(`id="${id}"`)));
-  assert.match(scripts, /const UI_REVISION = '5\.0\.0'/);
+  assert.match(scripts, /const UI_REVISION = '5\.1\.0'/);
   assert.match(scripts, /function assertUiCompatibility\(\)/);
   assert.match(scripts, /Los archivos de Apps Script no son de la misma versión/);
   assert.match(scripts, /function failStartup\(message\)/);
   assert.match(scripts, /No recibimos la conexión de Cloudflare/);
   assert.match(scripts, /if \(options\.initial\) \{[\s\S]*?failStartup/);
   assert.ok(scripts.indexOf("window.addEventListener('message', handlePwaMessage)") < scripts.indexOf('function init()'));
+});
+
+test('la navegación ya no muestra historial ni correo y comparte selecciones por WhatsApp', () => {
+  assert.doesNotMatch(indexHtml, /id="view-history"/);
+  assert.doesNotMatch(indexHtml, /data-view="history"/);
+  assert.doesNotMatch(indexHtml, /Correo para avisos/);
+  assert.doesNotMatch(indexHtml, /Avisos por correo/);
+  assert.match(indexHtml, /id="whatsappModeButton"/);
+  assert.match(indexHtml, /id="shareWhatsappButton"/);
+  assert.match(scripts, /https:\/\/wa\.me\/\?text=/);
+  assert.match(scripts, /function shareSelectedOnWhatsapp/);
+  assert.match(code, /ENVIAR_CORREOS: 'NO'/);
+  assert.doesNotMatch(code, /MailApp\.sendEmail/);
 });
 
 test('el arranque tolera que Android bloquee localStorage dentro del marco de Google', () => {

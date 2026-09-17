@@ -40,22 +40,20 @@ test('la página carga el manifiesto, el service worker y una política de conte
   const app = readFileSync(`${publicRoot}app.js`, 'utf8');
   assert.match(html, /rel="manifest"/);
   assert.match(html, /Content-Security-Policy/);
-  assert.match(html, /\/app\.js\?v=5\.0\.0/);
-  assert.match(html, /\/app\.css\?v=5\.0\.0/);
+  assert.match(html, /\/app\.js\?v=5\.1\.0/);
+  assert.match(html, /\/app\.css\?v=5\.1\.0/);
   assert.match(app, /registerServiceWorker/);
   assert.match(app, /configure-push-bridge/);
 });
 
-test('la PWA conecta el formulario con la generación segura de imágenes del Worker', () => {
+test('la PWA ya no depende de Workers AI para las imágenes', () => {
   const app = readFileSync(`${publicRoot}app.js`, 'utf8');
   const worker = readFileSync(`${root}src/worker.js`, 'utf8');
   const wrangler = readFileSync(`${root}wrangler.jsonc`, 'utf8');
-  assert.match(app, /casa-en-orden:generate-product-image/);
-  assert.match(app, /\/api\/catalog-image/);
-  assert.match(app, /deviceSecret: state\.device\.secret/);
-  assert.match(worker, /@cf\/black-forest-labs\/flux-1-schnell/);
-  assert.match(worker, /AI_DAILY_LIMIT/);
-  assert.match(wrangler, /"ai"\s*:\s*\{\s*"binding"\s*:\s*"AI"/);
+  assert.doesNotMatch(app, /generate-product-image/);
+  assert.doesNotMatch(app, /\/api\/catalog-image/);
+  assert.doesNotMatch(worker, /Workers AI|AI_DAILY_LIMIT|flux-1-schnell/);
+  assert.doesNotMatch(wrangler, /"ai"\s*:/);
 });
 
 test('la PWA entrega una conexión alternativa dentro del fragmento del iframe', () => {

@@ -1,6 +1,6 @@
-# PWA de Casa en Orden 5.0
+# PWA de Casa en Orden 5.1
 
-Esta carpeta debe quedar en la raíz del repositorio conectado a Cloudflare.
+El contenido de esta carpeta debe quedar directamente en la raíz del repositorio conectado a Cloudflare.
 
 ```bash
 npm install
@@ -14,7 +14,7 @@ Configuración de Cloudflare:
 - **Build command:** vacío
 - **Deploy command:** `npx wrangler deploy`
 
-El binding `AI` de `wrangler.jsonc` habilita Workers AI sin API keys. El Worker usa `@cf/black-forest-labs/flux-1-schnell` para crear imágenes ilustrativas del catálogo y autentica cada solicitud con el dispositivo vinculado.
+Esta versión no usa Workers AI ni requiere un binding `AI`. Conserva Web Push directo, Durable Objects y la instalación existente.
 
 Al actualizar, conserva el nombre del Worker, `HOME_OBJECT_NAME`, `HOME_REGISTRY` y `manifest.id`. El enlace NFC sigue siendo:
 
