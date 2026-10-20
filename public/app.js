@@ -89,8 +89,10 @@ document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
   bindEvents();
-  primeCachedSession();
-  if (state.quickMode && state.device) {
+  const cachedSession = primeCachedSession();
+  const openedEarly = Boolean(cachedSession && state.quickMode);
+  if (openedEarly) openNfcForm();
+  else if (state.quickMode && state.device) {
     els.loadingState.querySelector('strong').textContent = 'Abriendo nuevo pendiente…';
   }
 
@@ -135,18 +137,20 @@ async function init() {
     acceptRegistration(restored);
     state.sessionReady = true;
 
-    if (!('Notification' in window) || Notification.permission === 'denied' || !restored.notificationsActive) {
+    if (!openedEarly && (!('Notification' in window) || Notification.permission === 'denied' || !restored.notificationsActive)) {
       showSetup('repair');
       els.continueButton.hidden = false;
       return;
     }
     state.forceActorOnce = true;
     state.launchActor = state.actor;
-    if (state.quickMode) openNfcForm();
-    else openApp({ actor: state.actor, action: state.pendingFrameAction, itemId: state.pendingItemId });
+    if (state.quickMode) {
+      if (!openedEarly) openNfcForm();
+    } else openApp({ actor: state.actor, action: state.pendingFrameAction, itemId: state.pendingItemId });
     flushPendingOpen();
   } catch (error) {
-    showFatal(errorMessage(error));
+    if (openedEarly) showToast(errorMessage(error), 6000);
+    else showFatal(errorMessage(error));
   }
 
   registrationPromise.then(registration => {
