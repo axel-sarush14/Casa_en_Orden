@@ -90,7 +90,9 @@ document.addEventListener('DOMContentLoaded', init);
 async function init() {
   bindEvents();
   primeCachedSession();
-  if (state.quickMode && state.device) showQuickView();
+  if (state.quickMode && state.device) {
+    els.loadingState.querySelector('strong').textContent = 'Abriendo nuevo pendiente…';
+  }
 
   const registrationPromise = registerServiceWorker()
     .then(registration => {
@@ -140,7 +142,7 @@ async function init() {
     }
     state.forceActorOnce = true;
     state.launchActor = state.actor;
-    if (state.quickMode) showQuickView();
+    if (state.quickMode) openNfcForm();
     else openApp({ actor: state.actor, action: state.pendingFrameAction, itemId: state.pendingItemId });
     flushPendingOpen();
   } catch (error) {
@@ -191,7 +193,7 @@ function bindEvents() {
     els.installBanner.hidden = true;
   });
   els.openButton.addEventListener('click', () => {
-    if (state.quickMode) showQuickView();
+    if (state.quickMode) openNfcForm();
     else openApp({ actor: state.actor });
   });
   els.frame.addEventListener('load', () => {
@@ -491,6 +493,10 @@ function flushPendingOpen() {
   const options = state.pendingOpenOptions;
   state.pendingOpenOptions = null;
   openApp(options);
+}
+
+function openNfcForm() {
+  requestOpenApp({ actor: state.actor, action: 'add' });
 }
 
 function showQuickView() {
