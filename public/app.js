@@ -89,6 +89,7 @@ document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
   bindEvents();
+  bindVisibleViewport();
   const cachedSession = primeCachedSession();
   const openedEarly = Boolean(cachedSession && state.quickMode);
   if (openedEarly) openNfcForm();
@@ -157,6 +158,29 @@ async function init() {
     if (!registration || !state.device || Notification.permission !== 'granted') return;
     refreshStoredSubscription().catch(error => console.warn('No se pudo actualizar la suscripción en segundo plano.', error));
   });
+}
+
+let visibleViewportFrame = 0;
+function bindVisibleViewport() {
+  window.addEventListener('resize', scheduleVisibleViewport);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', scheduleVisibleViewport);
+    window.visualViewport.addEventListener('scroll', scheduleVisibleViewport);
+  }
+  scheduleVisibleViewport();
+}
+function scheduleVisibleViewport() {
+  cancelAnimationFrame(visibleViewportFrame);
+  visibleViewportFrame = requestAnimationFrame(syncVisibleViewport);
+}
+function syncVisibleViewport() {
+  const viewport = window.visualViewport;
+  // No cambiar la altura de la app por el zoom manual del usuario.
+  if (viewport && Math.abs(viewport.scale - 1) > 0.05) return;
+  const height = viewport ? viewport.height : window.innerHeight;
+  const shell = document.querySelector('#appShell');
+  if (shell) shell.style.height = `${height}px`;
+  postToFrame({ type: 'casa-en-orden:viewport', height });
 }
 
 function bindEvents() {
@@ -591,6 +615,7 @@ function handleFrameMessage(event) {
   }
   if (data.type === 'casa-en-orden:shell-ready') {
     state.frameReady = true;
+    scheduleVisibleViewport();
     configureFrame();
     dispatchPendingFrameAction();
     dispatchPendingDataRefresh();
